@@ -1,0 +1,985 @@
+// FacturArkos — modelo de datos núcleo
+// Multi-tenant single-DB: todo se aísla por organizationId (Playbook P2).
+// Montos en Decimal; fechas fiscales en string yyyy-mm-dd (timezone Lima).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Enums ─────────────────────────
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MANAGER
+  CASHIER
+  ACCOUNTANT
+}
+
+enum SunatProvider {
+  APISUNAT
+  NUBEFACT
+}
+
+enum PaymentProvider {
+  NIUBIZ
+  IZIPAY
+  CULQI
+}
+
+/// SUNAT catálogo 06 (tipo de doc de identidad). NONE=0, DNI=1, CE=4, RUC=6, PASSPORT=7
+enum DocIdentityType {
+  NONE
+  DNI
+  CE
+  RUC
+  PASSPORT
+}
+
+/// SUNAT catálogo 01 (tipo de comprobante)
+enum DocumentType {
+  FACTURA // 01
+  BOLETA // 03
+  NOTA_CREDITO // 07
+  NOTA_DEBITO // 08
+  GUIA_REMISION // 09
+  RETENCION // 20
+  PERCEPCION // 40
+}
+
+/// Comprobantes de retención (20) y percepción (40). Modelados aparte de Invoice
+/// porque no son ventas 1:1 con una orden: referencian varios comprobantes.
+enum TaxDocKind {
+  RETENCION
+  PERCEPCION
+}
+
+/// Afectación IGV por línea (SUNAT catálogo 07, simplificado)
+enum IgvAffectation {
+  GRAVADO
+  EXONERADO
+  INAFECTO
+  EXPORTACION
+  GRATUITO
+}
+
+enum InvoiceStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  VOIDED
+  VOID_PENDING
+}
+
+enum OrderStatus {
+  OPEN
+  PENDING_PAYMENT
+  PAID
+  VOIDED
+  CANCELLED
+}
+
+enum SaleType {
+  LOCAL
+  ONLINE
+  DELIVERY
+}
+
+/// Estado de preparación/entrega de un pedido (tienda online / delivery).
+enum FulfillmentStatus {
+  PENDING // recibido, por preparar
+  PREPARING // en preparación
+  READY // listo para entregar/recoger
+  DELIVERED // entregado
+  CANCELLED // anulado
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  YAPE
+  PLIN
+  TRANSFER
+  DEPOSIT
+  CREDIT
+  NIUBIZ_QR
+  IZIPAY
+  CULQI
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REFUNDED
+}
+
+enum StockMovementType {
+  INITIAL
+  PURCHASE_IN
+  SALE_OUT
+  TRANSFER_IN
+  TRANSFER_OUT
+  ADJUST_IN
+  ADJUST_OUT
+  RETURN_IN
+}
+
+enum CashSessionStatus {
+  OPEN
+  CLOSED
+}
+
+enum CashMovementType {
+  OPENING
+  SALE_INCOME
+  INCOME
+  EXPENSE
+  WITHDRAWAL
+  CLOSING
+}
+
+// ──────────────────────── Tenant raíz ────────────────────────
+
+enum CostingMethod {
+  AVERAGE
+  FIFO
+}
+
+enum PurchaseStatus {
+  DRAFT
+  RECEIVED
+  CANCELLED
+}
+
+enum GuiaType {
+  REMITENTE
+  TRANSPORTISTA
+}
+
+model Organization {
+  id              String   @id @default(cuid())
+  ruc             String   @unique
+  razonSocial     String
+  nombreComercial String?
+  direccion       String?
+  ubigeo          String?
+  timezone        String   @default("America/Lima")
+  logoUrl         String?
+  whatsapp        String?
+  pdfFooter       String?
+  yapeNumber      String?
+  yapeQrUrl       String?
+  plinNumber      String?
+  plinQrUrl       String?
+  // Régimen de retención/percepción (solo si el negocio es agente designado por SUNAT)
+  retentionAgent   Boolean @default(false)
+  retentionRegime  String? @default("01") // cat. 23: "01" → tasa 3%
+  perceptionAgent  Boolean @default(false)
+  perceptionRegime String? @default("01") // percepción: "01" 2% general, "02" 1%, "03" venta interna
+  // Detracción (SPOT): cuenta del Banco de la Nación del proveedor
+  detractionAccount String?
+  plan            String   @default("trial")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  users          User[]
+  establishments Establishment[]
+  sunatConfig    SunatConfig?
+  paymentConfigs PaymentConfig[]
+  billingSeries  BillingSeries[]
+  categories     Category[]
+  units          Unit[]
+  priceLists     PriceList[]
+  products       Product[]
+  warehouses     Warehouse[]
+  stockMovements StockMovement[]
+  lots           Lot[]
+  purchases      Purchase[]
+  guiasRemision  GuiaRemision[]
+  commercialDocs CommercialDoc[]
+  recurringPlans RecurringPlan[]
+  taxDocuments   TaxDocument[]
+  customers      Customer[]
+  suppliers      Supplier[]
+  orders         Order[]
+  invoices       Invoice[]
+  payments       Payment[]
+  cashSessions   CashSession[]
+  auditLogs      AuditLog[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  organizationId String
+  email          String
+  passwordHash   String
+  name           String
+  role           UserRole @default(CASHIER)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  cashSessions CashSession[]
+  orders       Order[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@map("users")
+}
+
+model Establishment {
+  id             String   @id @default(cuid())
+  organizationId String
+  code           String   @default("0000") // código de establecimiento anexo SUNAT
+  name           String
+  address        String?
+  isMain         Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  billingSeries BillingSeries[]
+  orders        Order[]
+  cashSessions  CashSession[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("establishments")
+}
+
+// ──────────────────── Config de integraciones (cifradas) ────────────────────
+
+model SunatConfig {
+  id             String        @id @default(cuid())
+  organizationId String        @unique
+  provider       SunatProvider @default(APISUNAT)
+  personaId      String // cifrado AES-256-GCM (P1)
+  token          String // cifrado AES-256-GCM (P1)
+  testMode       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("sunat_configs")
+}
+
+model PaymentConfig {
+  id             String          @id @default(cuid())
+  organizationId String
+  provider       PaymentProvider
+  credentials    String // JSON cifrado AES-256-GCM (P1)
+  webhookSecret  String? // cifrado
+  testMode       Boolean         @default(true)
+  enabled        Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@index([organizationId])
+  @@map("payment_configs")
+}
+
+// ──────────────────── Series y correlativos (P4 atómico) ────────────────────
+
+model BillingSeries {
+  id              String       @id @default(cuid())
+  organizationId  String
+  establishmentId String?
+  documentType    DocumentType
+  series          String // ej. F001, B001
+  currentNumber   Int          @default(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  establishment Establishment? @relation(fields: [establishmentId], references: [id])
+
+  @@unique([organizationId, documentType, series])
+  @@index([organizationId])
+  @@map("billing_series")
+}
+
+// ──────────────────────────── Catálogo ────────────────────────────
+
+model Category {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  products     Product[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("categories")
+}
+
+model Unit {
+  id             String @id @default(cuid())
+  organizationId String
+  code           String // SUNAT catálogo 03 (ej. NIU, KGM, ZZ)
+  name           String
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, code])
+  @@map("units")
+}
+
+model PriceList {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  isDefault      Boolean @default(false)
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  prices       ProductPrice[]
+
+  @@unique([organizationId, name])
+  @@map("price_lists")
+}
+
+model Product {
+  id              String         @id @default(cuid())
+  organizationId  String
+  code            String?
+  barcode         String?
+  name            String
+  categoryId      String?
+  unitCode        String         @default("NIU")
+  sunatProductCode String?
+  igvAffectation  IgvAffectation @default(GRAVADO)
+  price           Decimal        @default(0) @db.Decimal(14, 4) // precio de venta (IGV incluido)
+  cost            Decimal        @default(0) @db.Decimal(14, 4)
+  tracksStock     Boolean        @default(true)
+  isCombo         Boolean        @default(false)
+  minStock        Decimal        @default(0) @db.Decimal(14, 3)
+  costingMethod   CostingMethod  @default(AVERAGE)
+  active          Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category     Category?       @relation(fields: [categoryId], references: [id])
+  prices        ProductPrice[]
+  stocks        Stock[]
+  movements     StockMovement[]
+  lots          Lot[]
+  purchaseItems PurchaseItem[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, barcode])
+  @@index([organizationId, name])
+  @@map("products")
+}
+
+model ProductPrice {
+  id          String  @id @default(cuid())
+  productId   String
+  priceListId String
+  price       Decimal @db.Decimal(14, 4)
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  priceList PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, priceListId])
+  @@map("product_prices")
+}
+
+// ──────────────────────────── Inventario ────────────────────────────
+
+model Warehouse {
+  id             String  @id @default(cuid())
+  organizationId String
+  name           String
+  isMain         Boolean @default(false)
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  stocks       Stock[]
+  movements    StockMovement[]
+  lots         Lot[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@map("warehouses")
+}
+
+model Stock {
+  id          String  @id @default(cuid())
+  productId   String
+  warehouseId String
+  quantity    Decimal @default(0) @db.Decimal(14, 3)
+
+  product   Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, warehouseId])
+  @@map("stocks")
+}
+
+model StockMovement {
+  id             String            @id @default(cuid())
+  organizationId String
+  productId      String
+  warehouseId    String
+  type           StockMovementType
+  quantity       Decimal           @db.Decimal(14, 3)
+  unitCost       Decimal?          @db.Decimal(14, 4)
+  reference      String?
+  createdAt      DateTime          @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, productId])
+  @@map("stock_movements")
+}
+
+// ──────────────────────────── Clientes / Proveedores ────────────────────────────
+
+model Customer {
+  id             String          @id @default(cuid())
+  organizationId String
+  identityType   DocIdentityType @default(DNI)
+  documentNumber String
+  name           String
+  address        String?
+  email          String?
+  phone          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  orders         Order[]
+  recurringPlans RecurringPlan[]
+
+  @@unique([organizationId, identityType, documentNumber])
+  @@index([organizationId])
+  @@map("customers")
+}
+
+model Supplier {
+  id             String   @id @default(cuid())
+  organizationId String
+  ruc            String
+  businessName   String
+  address        String?
+  phone          String?
+  email          String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  purchases    Purchase[]
+
+  @@unique([organizationId, ruc])
+  @@map("suppliers")
+}
+
+// ──────────────────────────── Caja ────────────────────────────
+
+model CashSession {
+  id              String            @id @default(cuid())
+  organizationId  String
+  establishmentId String
+  userId          String
+  openingAmount   Decimal           @db.Decimal(14, 2)
+  closingAmount   Decimal?          @db.Decimal(14, 2)
+  expectedAmount  Decimal?          @db.Decimal(14, 2)
+  status          CashSessionStatus @default(OPEN)
+  openedAt        DateTime          @default(now())
+  closedAt        DateTime?
+  notes           String?
+
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  establishment Establishment  @relation(fields: [establishmentId], references: [id])
+  user          User           @relation(fields: [userId], references: [id])
+  movements     CashMovement[]
+  orders        Order[]
+
+  @@index([organizationId, status])
+  @@map("cash_sessions")
+}
+
+model CashMovement {
+  id            String           @id @default(cuid())
+  cashSessionId String
+  type          CashMovementType
+  amount        Decimal          @db.Decimal(14, 2)
+  concept       String?
+  createdAt     DateTime         @default(now())
+
+  cashSession CashSession @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+
+  @@index([cashSessionId])
+  @@map("cash_movements")
+}
+
+// ──────────────────────────── Ventas (POS) ────────────────────────────
+
+model Order {
+  id              String      @id @default(cuid())
+  organizationId  String
+  establishmentId String
+  customerId      String?
+  cashSessionId   String?
+  userId          String?
+  saleType        SaleType    @default(LOCAL)
+  currency        String      @default("PEN")
+  status          OrderStatus @default(OPEN)
+  subtotal        Decimal     @default(0) @db.Decimal(14, 2) // base sin IGV
+  discount        Decimal     @default(0) @db.Decimal(14, 2)
+  igv             Decimal     @default(0) @db.Decimal(14, 2)
+  total           Decimal     @default(0) @db.Decimal(14, 2) // con IGV
+  note            String?
+  detraction      Boolean     @default(false) // operación sujeta a detracción (SPOT)
+  fulfillmentStatus FulfillmentStatus? // preparación/entrega (solo pedidos online/delivery)
+  contactName     String? // datos de contacto del pedido online (sin cuenta)
+  contactPhone    String?
+  contactAddress  String?
+  dueDate         DateTime? // vencimiento para ventas al crédito (cobranzas)
+  paidAt          DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  establishment Establishment @relation(fields: [establishmentId], references: [id])
+  customer      Customer?     @relation(fields: [customerId], references: [id])
+  cashSession   CashSession?  @relation(fields: [cashSessionId], references: [id])
+  user          User?         @relation(fields: [userId], references: [id])
+  items         OrderItem[]
+  payments      Payment[]
+  invoice       Invoice?
+
+  @@index([organizationId, status])
+  @@index([organizationId, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id               String         @id @default(cuid())
+  orderId          String
+  productId        String?
+  name             String
+  quantity         Decimal        @db.Decimal(14, 3)
+  unitPrice        Decimal        @db.Decimal(14, 4) // precio unitario CON IGV (como se cobra)
+  unitCost         Decimal        @default(0) @db.Decimal(14, 4) // costo snapshot al vender (COGS)
+  discount         Decimal        @default(0) @db.Decimal(14, 2)
+  total            Decimal        @db.Decimal(14, 2) // total de línea CON IGV
+  igvAffectation   IgvAffectation @default(GRAVADO)
+  unitCode         String         @default("NIU")
+  sunatProductCode String?
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Payment {
+  id             String        @id @default(cuid())
+  organizationId String
+  orderId        String
+  method         PaymentMethod
+  amount         Decimal       @db.Decimal(14, 2)
+  status         PaymentStatus @default(APPROVED)
+  provider       String?
+  externalId     String?       @unique // idempotencia por ID externo del proveedor (P4)
+  meta           Json?
+  createdAt      DateTime      @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, orderId])
+  @@map("payments")
+}
+
+// ──────────────────────────── Comprobantes ────────────────────────────
+
+model Invoice {
+  id             String        @id @default(cuid())
+  organizationId String
+  orderId        String?       @unique // 1:1 con la venta; null para NC/ND (referencian otro comprobante)
+  documentType   DocumentType
+  series         String
+  number         Int
+  status         InvoiceStatus @default(PENDING)
+  externalId     String? // documentId del proveedor (APISUNAT)
+  sunatCode      String?
+  sunatMessage   String?
+  issueDate      String // yyyy-mm-dd en timezone de Lima
+  currency       String        @default("PEN")
+  subtotal       Decimal       @db.Decimal(14, 2)
+  igv            Decimal       @db.Decimal(14, 2)
+  total          Decimal       @db.Decimal(14, 2)
+  customerDocType DocIdentityType @default(NONE)
+  customerDoc    String?
+  customerName   String?
+  // Referencia para NC/ND
+  refDocumentType DocumentType?
+  refSeries       String?
+  refNumber       Int?
+  discrepancyCode String? // SUNAT catálogo 09 (NC) / 10 (ND)
+  reason          String?
+  // Detracción (SPOT) — para reconstruir la representación impresa
+  detractionCode    String?  // cat. 54 del bien/servicio
+  detractionPercent Decimal? @db.Decimal(6, 2)
+  detractionAmount  Decimal? @db.Decimal(14, 2)
+  // Artefactos
+  xmlUrl  String?
+  cdrUrl  String?
+  pdfUrl  String?
+  hash    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  order        Order?       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([organizationId, documentType, series, number])
+  @@map("invoices")
+}
+
+// ──────────────────────────── Auditoría ────────────────────────────
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String?
+  action         String
+  entity         String
+  entityId       String?
+  before         Json?
+  after          Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, entity])
+  @@map("audit_logs")
+}
+
+// ──────────────────────────── Lotes / Vencimiento ────────────────────────────
+
+model Lot {
+  id             String    @id @default(cuid())
+  organizationId String
+  productId      String
+  warehouseId    String
+  code           String
+  expirationDate DateTime?
+  quantity       Decimal   @default(0) @db.Decimal(14, 3)
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouse    Warehouse    @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, expirationDate])
+  @@index([productId])
+  @@map("lots")
+}
+
+// ──────────────────────────── Compras ────────────────────────────
+
+model Purchase {
+  id             String         @id @default(cuid())
+  organizationId String
+  supplierId     String
+  warehouseId    String
+  documentType   String? // tipo de comprobante del proveedor (01/03/...)
+  series         String?
+  number         String?
+  currency       String         @default("PEN")
+  issueDate      String // yyyy-mm-dd
+  subtotal       Decimal        @default(0) @db.Decimal(14, 2)
+  igv            Decimal        @default(0) @db.Decimal(14, 2)
+  total          Decimal        @default(0) @db.Decimal(14, 2)
+  status         PurchaseStatus @default(RECEIVED)
+  note           String?
+  xmlImported    Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  supplier     Supplier       @relation(fields: [supplierId], references: [id])
+  items        PurchaseItem[]
+
+  @@index([organizationId, createdAt])
+  @@map("purchases")
+}
+
+model PurchaseItem {
+  id         String  @id @default(cuid())
+  purchaseId String
+  productId  String?
+  name       String
+  quantity   Decimal @db.Decimal(14, 3)
+  unitCost   Decimal @db.Decimal(14, 4)
+  total      Decimal @db.Decimal(14, 2)
+
+  purchase Purchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  product  Product? @relation(fields: [productId], references: [id])
+
+  @@index([purchaseId])
+  @@map("purchase_items")
+}
+
+// ──────────────────── Guía de Remisión Electrónica (GRE) ────────────────────
+
+model GuiaRemision {
+  id             String        @id @default(cuid())
+  organizationId String
+  type           GuiaType      @default(REMITENTE)
+  series         String
+  number         Int
+  status         InvoiceStatus @default(PENDING)
+  externalId     String?
+  sunatCode      String?
+  sunatMessage   String?
+  issueDate      String
+
+  // Destinatario
+  receiverDocType DocIdentityType @default(RUC)
+  receiverDoc     String
+  receiverName    String
+
+  // Datos del traslado
+  transferReason String  @default("01") // SUNAT cat 20 (01 venta, 04 traslado entre estab., etc.)
+  transferDate   String
+  totalWeight    Decimal @default(0) @db.Decimal(14, 3)
+  weightUnit     String  @default("KGM")
+
+  // Direcciones de partida y llegada
+  originUbigeo  String?
+  originAddress String
+  destUbigeo    String?
+  destAddress   String
+
+  // Transporte (01 público / 02 privado)
+  transportMode String           @default("02")
+  carrierRuc    String?
+  carrierName   String?
+  vehiclePlate  String?
+  driverDocType DocIdentityType?
+  driverDoc     String?
+  driverName    String?
+
+  // Documento relacionado (opcional)
+  relatedDocType String?
+  relatedSeries  String?
+  relatedNumber  Int?
+
+  xmlUrl    String?
+  cdrUrl    String?
+  pdfUrl    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        GuiaRemisionItem[]
+
+  @@unique([organizationId, series, number])
+  @@index([organizationId, status])
+  @@map("guias_remision")
+}
+
+model GuiaRemisionItem {
+  id          String  @id @default(cuid())
+  guiaId      String
+  productId   String?
+  description String
+  quantity    Decimal @db.Decimal(14, 3)
+  unitCode    String  @default("NIU")
+
+  guia GuiaRemision @relation(fields: [guiaId], references: [id], onDelete: Cascade)
+
+  @@index([guiaId])
+  @@map("guia_remision_items")
+}
+
+// ──────────────── Documentos comerciales internos (no SUNAT) ────────────────
+
+enum CommercialKind {
+  COTIZACION
+  NOTA_VENTA
+}
+
+enum CommercialStatus {
+  ABIERTA
+  CONVERTIDA
+  ANULADA
+}
+
+model CommercialDoc {
+  id             String           @id @default(cuid())
+  organizationId String
+  kind           CommercialKind
+  series         String
+  number         Int
+  customerId     String?
+  customerName   String?
+  subtotal       Decimal          @db.Decimal(14, 2)
+  igv            Decimal          @db.Decimal(14, 2)
+  total          Decimal          @db.Decimal(14, 2)
+  status         CommercialStatus @default(ABIERTA)
+  validUntil     String?
+  note           String?
+  createdAt      DateTime         @default(now())
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  items        CommercialDocItem[]
+
+  @@index([organizationId, kind])
+  @@map("commercial_docs")
+}
+
+model CommercialDocItem {
+  id        String  @id @default(cuid())
+  docId     String
+  productId String?
+  name      String
+  quantity  Decimal @db.Decimal(14, 3)
+  unitPrice Decimal @db.Decimal(14, 4)
+  total     Decimal @db.Decimal(14, 2)
+
+  doc CommercialDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+
+  @@index([docId])
+  @@map("commercial_doc_items")
+}
+
+model CommercialSeries {
+  id             String         @id @default(cuid())
+  organizationId String
+  kind           CommercialKind
+  series         String
+  currentNumber  Int            @default(0)
+
+  @@unique([organizationId, kind, series])
+  @@map("commercial_series")
+}
+
+/// Facturación recurrente (suscripciones/mensualidades que se emiten solas).
+enum RecurFrequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+enum RecurStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+model RecurringPlan {
+  id             String         @id @default(cuid())
+  organizationId String
+  customerId     String
+  name           String
+  documentType   DocumentType   @default(FACTURA)
+  series         String?
+  frequency      RecurFrequency @default(MONTHLY)
+  status         RecurStatus    @default(ACTIVE)
+  nextRunAt      DateTime
+  lastRunAt      DateTime?
+  emitOnRun      Boolean        @default(true)
+  note           String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer            @relation(fields: [customerId], references: [id])
+  items        RecurringPlanItem[]
+
+  @@index([organizationId, status])
+  @@index([nextRunAt])
+  @@map("recurring_plans")
+}
+
+model RecurringPlanItem {
+  id        String  @id @default(cuid())
+  planId    String
+  productId String?
+  name      String
+  quantity  Decimal @db.Decimal(14, 3)
+  unitPrice Decimal @db.Decimal(14, 4) // CON IGV
+
+  plan RecurringPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId])
+  @@map("recurring_plan_items")
+}
+
+// ──────────────── Comprobantes de retención (20) y percepción (40) ────────────────
+// No son ventas: el agente designado emite uno que referencia varios comprobantes
+// ya pagados/cobrados. Outbox-lite igual que Invoice (PENDING → enviar → reconciliar).
+
+model TaxDocument {
+  id             String        @id @default(cuid())
+  organizationId String
+  kind           TaxDocKind
+  series         String // R001 / P001
+  number         Int
+  status         InvoiceStatus @default(PENDING)
+  externalId     String? // documentId APISUNAT
+  sunatCode      String?
+  sunatMessage   String?
+  issueDate      String
+  currency       String        @default("PEN")
+  regime         String // 01 (3% ret) / 01 (2% perc)
+  percent        Decimal       @db.Decimal(6, 2)
+  // Contraparte (proveedor en retención / cliente en percepción)
+  partyDocType DocIdentityType @default(RUC)
+  partyDoc     String
+  partyName    String
+  // Totales
+  totalBase Decimal @db.Decimal(14, 2) // suma de los comprobantes referidos
+  totalTax  Decimal @db.Decimal(14, 2) // monto retenido/percibido
+  totalPaid Decimal @db.Decimal(14, 2) // neto pagado/cobrado
+  pdfUrl    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  refs         TaxDocumentRef[]
+
+  @@unique([organizationId, kind, series, number])
+  @@index([organizationId, kind])
+  @@map("tax_documents")
+}
+
+model TaxDocumentRef {
+  id            String   @id @default(cuid())
+  taxDocumentId String
+  docType       String // "01" factura, "03" boleta
+  series        String
+  number        Int
+  issueDate     String
+  currency      String   @default("PEN")
+  total         Decimal  @db.Decimal(14, 2) // total del comprobante referido
+  taxAmount     Decimal  @db.Decimal(14, 2) // retenido/percibido de ESTE comprobante
+  netPaid       Decimal  @db.Decimal(14, 2)
+  exchangeRate  Decimal? @db.Decimal(10, 3) // si el comprobante referido es en USD
+
+  taxDocument TaxDocument @relation(fields: [taxDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([taxDocumentId])
+  @@map("tax_document_refs")
+}

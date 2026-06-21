@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.pfx
+
+# prisma
+apps/api/prisma/*.db
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# misc
+coverage/
+.turbo/
+
+# postgres portable local (binarios y datos — no va al repo)
+.pgdev/
+
+# scripts background output
+*.output

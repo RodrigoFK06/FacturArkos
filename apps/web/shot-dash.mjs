@@ -1,0 +1,15 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch({ channel: 'msedge' });
+const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
+const p = await ctx.newPage();
+await p.goto('http://localhost:3000/login', { waitUntil: 'networkidle' });
+await p.fill('input[type=email]', 'demo@facturarkos.pe');
+await p.fill('input[type=password]', 'password123');
+await p.click('button[type=submit]');
+await p.waitForURL('**/dashboard', { timeout: 20000 });
+await p.evaluate(() => localStorage.setItem('tour_dashboard_v1', '1'));
+await p.reload({ waitUntil: 'networkidle' });
+await p.waitForTimeout(1700);
+await p.screenshot({ path: 'C:/Trabajo/Clientes/FacturArkos/shots/dashboard.png' });
+await b.close();
+console.log('OK');

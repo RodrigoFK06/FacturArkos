@@ -1,0 +1,56 @@
+# FacturArkos — stack de producción (Postgres + API + Web).
+# Uso: copia .env.prod.example a .env y corre: docker compose -f docker-compose.prod.yml up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: facturarkos
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: '3001'
+      DATABASE_URL: postgresql://postgres:${DB_PASSWORD:-postgres}@db:5432/facturarkos?schema=public
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: '12h'
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY}
+      CORS_ORIGINS: ${WEB_PUBLIC_URL:-http://localhost:3000}
+      APISUNAT_BASE_URL: https://back.apisunat.com
+      APISUNAT_PERSONA_ID: ${APISUNAT_PERSONA_ID:-}
+      APISUNAT_TOKEN: ${APISUNAT_TOKEN:-}
+      APISUNAT_TEST_MODE: ${APISUNAT_TEST_MODE:-true}
+      PERU_API_BASE_URL: https://api.apis.net.pe
+      PERU_API_TOKEN: ${PERU_API_TOKEN:-}
+    ports:
+      - '3001:3001'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${API_PUBLIC_URL:-http://localhost:3001/api}
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '3000:3000'
+
+volumes:
+  pgdata:
