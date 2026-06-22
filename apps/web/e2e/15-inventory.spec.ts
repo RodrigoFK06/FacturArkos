@@ -43,12 +43,15 @@ test.describe('Inventario — almacenes', () => {
     await page.getByRole('button', { name: 'Almacenes' }).click();
     await expect(page.getByRole('heading', { name: 'Nuevo almacén' })).toBeVisible();
 
-    // La fila marcada como "Principal" no expone botón de ocultar.
-    const mainRow = page.getByRole('row').filter({ hasText: 'Principal' }).first();
+    // La fila de gestión del almacén principal: contiene "Principal" y el botón
+    // "Editar" (filtramos por Editar para no agarrar filas de la tabla de stock).
+    const mainRow = page
+      .getByRole('row')
+      .filter({ hasText: 'Principal' })
+      .filter({ has: page.getByRole('button', { name: 'Editar' }) })
+      .first();
     await expect(mainRow).toBeVisible({ timeout: 15_000 });
-    await expect(mainRow.getByText('Principal')).toBeVisible();
+    // El principal NO se puede ocultar (regla del backend).
     await expect(mainRow.getByRole('button', { name: 'Ocultar' })).toHaveCount(0);
-    // Sí debe ofrecer "Editar".
-    await expect(mainRow.getByRole('button', { name: 'Editar' })).toBeVisible();
   });
 });

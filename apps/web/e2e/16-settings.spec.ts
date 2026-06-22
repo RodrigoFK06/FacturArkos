@@ -30,8 +30,8 @@ test.describe('Configuración — establecimientos (sucursales)', () => {
 
     const code = randomCode();
     const name = uniq('Sucursal E2E');
-    await page.getByLabel('Código (4 dígitos)').fill(code);
-    await page.getByLabel('Nombre').fill(name);
+    await panel.getByLabel('Código (4 dígitos)').fill(code);
+    await panel.getByLabel('Nombre', { exact: true }).fill(name);
     await page.getByRole('button', { name: 'Crear sucursal' }).click();
 
     // Aparece en la tabla del panel.
@@ -42,7 +42,7 @@ test.describe('Configuración — establecimientos (sucursales)', () => {
     // Editarla: renombrar y guardar.
     await row.getByRole('button', { name: 'Editar' }).click();
     const renamed = uniq('Sucursal E2E ed');
-    await page.getByLabel('Nombre').fill(renamed);
+    await panel.getByLabel('Nombre', { exact: true }).fill(renamed);
     await page.getByRole('button', { name: 'Guardar cambios' }).click();
 
     await expect(panel.getByRole('row', { name: new RegExp(renamed) })).toBeVisible({ timeout: 15_000 });

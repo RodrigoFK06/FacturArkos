@@ -49,7 +49,8 @@ test.describe('Ventas — listado y anulación', () => {
       },
     });
     expect(orderRes.ok(), `POST orders (${orderRes.status()}): ${await orderRes.text()}`).toBeTruthy();
-    const order = (await orderRes.json()) as { id: string; total: number | string };
+    // createSale responde { order, invoice? } — el total vive en .order.
+    const order = ((await orderRes.json()) as { order: { id: string; total: number | string } }).order;
     await ctx.dispose();
 
     const totalText = money(Number(order.total));
