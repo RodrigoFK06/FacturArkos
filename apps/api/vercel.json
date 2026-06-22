@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "pnpm install --no-frozen-lockfile",
-  "buildCommand": "pnpm prisma generate && pnpm prisma db push && pnpm build",
+  "buildCommand": "pnpm prisma generate && pnpm prisma db push && pnpm build && mkdir -p public && echo ok > public/index.html",
+  "outputDirectory": "public",
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
   "crons": [
     { "path": "/api/recurring/cron", "schedule": "0 11 * * *" },
