@@ -120,6 +120,7 @@ Convención de roles: **(auth)** = cualquier usuario autenticado; **(público)**
 - `GET /products/:id` **(auth)**.
 - `POST /products` / `PATCH /products/:id` **(OWNER, ADMIN, MANAGER)** — alta/edición; precio con IGV incluido, afectación IGV, código SUNAT, stock mínimo; `active` para ocultar/mostrar.
 - `GET /categories` **(auth)** (`?all=1` incluye ocultas) / `POST /categories` / `PATCH /categories/:id` **(OWNER, ADMIN, MANAGER)** — renombra o deshabilita.
+- **Listas de precios** (menudeo/mayorista): `GET /price-lists` **(auth)** · `POST /price-lists` / `PATCH /price-lists/:id` (nombre / predeterminada) **(OWNER, ADMIN, MANAGER)** · `GET /price-lists/:id/prices` **(auth)** (productos con su precio en la lista) · `PUT /price-lists/:id/prices` **(OWNER, ADMIN, MANAGER)** (fija/elimina precios). `GET /products?priceListId=` devuelve los productos con el precio de esa lista (el POS lo usa con su selector).
 
 ### Clientes — `/customers`
 - `GET /customers` **(auth)** — lista (filtro `q`).
@@ -134,6 +135,7 @@ Convención de roles: **(auth)** = cualquier usuario autenticado; **(público)**
 - `GET /orders/online` **(auth)** — tablero de pedidos de tienda/delivery.
 - `PATCH /orders/:id/fulfillment` **(OWNER, ADMIN, MANAGER, CASHIER)** — avanza estado de preparación/entrega.
 - `POST /orders/bulk` **(OWNER, ADMIN, MANAGER, CASHIER)** — emisión masiva (cada doc aislado, no aborta el lote).
+- `POST /orders/:id/cancel` **(OWNER, ADMIN, MANAGER)** — anula una venta SIN comprobante aceptado: repone stock (RETURN_IN) y revierte el ingreso de caja en una transacción. Si ya tiene comprobante, se anula por comunicación de baja. UI en `/ventas`.
 
 ### Comprobantes SUNAT — `/invoices`
 - `GET /invoices` **(auth)** — últimos 100.
@@ -156,6 +158,7 @@ Convención de roles: **(auth)** = cualquier usuario autenticado; **(público)**
 ### Documentos comerciales (no SUNAT) — `/commercial`
 - `GET /commercial` **(auth)** · `GET /commercial/:id` **(auth)** — cotizaciones / notas de venta.
 - `POST /commercial` / `:id/convert` **(OWNER, ADMIN, MANAGER, CASHIER)** — crea y convierte a venta.
+- `POST /commercial/:id/cancel` **(OWNER, ADMIN, MANAGER)** — anula un documento abierto (ciclo ABIERTA → CONVERTIDA | ANULADA).
 
 ### Inventario — `/inventory`
 - `GET /inventory/warehouses` (`?all=1` incluye ocultos) / `stock` / `kardex/:productId` / `alerts/low-stock` / `alerts/expiring` / `lots` **(auth)**.
@@ -174,7 +177,7 @@ Convención de roles: **(auth)** = cualquier usuario autenticado; **(público)**
 - `POST /receivables/:orderId/payment` **(OWNER, ADMIN, MANAGER, CASHIER)** — abono parcial, marca PAID al saldar, ingreso a caja si efectivo.
 
 ### Facturación recurrente — `/recurring`
-- Clase **(OWNER, ADMIN, MANAGER)**: `GET /recurring`, `POST /recurring`, `POST /recurring/:id/status`, `POST /recurring/:id/run`.
+- Clase **(OWNER, ADMIN, MANAGER)**: `GET /recurring`, `POST /recurring`, `PATCH /recurring/:id` (edita el plan; reemplaza ítems), `POST /recurring/:id/status`, `POST /recurring/:id/run`.
 - `GET /recurring/cron` **(público + CRON_SECRET)** — emite todos los planes vencidos (Vercel Cron diario).
 
 ### Pagos / pasarela — `/payments`, `/webhooks/niubiz`
@@ -225,10 +228,15 @@ Convención de roles: **(auth)** = cualquier usuario autenticado; **(público)**
 ## 10. Frontend (mapa de páginas, `apps/web`)
 
 - **Público**: `/` (landing), `/precios`, `/login`, `/registro`, `/bienvenida`, `/tienda/[orgId]`, `/portal/[orgId]`, `/imprimir/[id]`.
-- **Panel** (`(admin)`, sidebar por rol): `/dashboard`, `/asistente` (IA), `/pos`, `/invoices`, `/cotizaciones`, `/emision-masiva`, `/retenciones`, `/resumen-diario`, `/products`, `/inventory`, `/purchases`, `/guias`, `/escanear-compra`, `/clientes`, `/cobranzas`, `/recurrente`, `/caja`, `/reports`, `/pedidos` (fulfillment), `/tienda`, `/portal`, `/usuarios`, `/settings`.
+- **Panel** (`(admin)`, sidebar por rol): `/dashboard`, `/asistente` (IA), `/pos`, `/ventas` (historial + anular), `/invoices`, `/cotizaciones`, `/emision-masiva`, `/retenciones`, `/resumen-diario`, `/products`, `/listas-precios`, `/inventory`, `/purchases`, `/guias`, `/escanear-compra`, `/clientes`, `/cobranzas`, `/recurrente`, `/caja`, `/reports`, `/pedidos` (fulfillment), `/tienda`, `/portal`, `/usuarios`, `/settings`.
 - Nav central filtrado por rol (`lib/nav.ts`), etiquetas en español (`lib/labels.ts`), patrón de listas: skeleton (cargando) → empty state → tabla; UX con principios de motion (Emil Kowalski) e impeccable.
 - **Gestión completa de maestros (CRUD)**: productos, categorías (mini-gestor dentro de Productos), clientes, proveedores (panel dentro de Compras), almacenes (panel dentro de Inventario), usuarios y establecimientos tienen alta + edición (formulario inline reutilizado) + ocultar/activar + toggle "Mostrar ocultos". El precio/stock mínimo de un producto ya es editable.
 - **Onboarding guiado**: el `/dashboard` muestra una tarjeta "Pon en marcha tu negocio" con un checklist de 6 pasos (datos del negocio, SUNAT, primer producto, primer cliente, primera venta, invitar equipo) cuyo estado se deriva de datos reales; cada paso pendiente enlaza a la página correspondiente, y al completarse todo muestra un estado de "listo".
+- **Listas de precios**: `/listas-precios` (crear listas menudeo/mayorista + editor de precios por producto); el POS tiene un selector que recotiza el catálogo según la lista. **Ventas**: `/ventas` (historial de ventas con anulación que repone stock). **Recurrente** y **cotizaciones** ahora se pueden editar/anular desde la UI.
+
+## 12. Pruebas automatizadas
+
+Jest (ts-jest, sin DB) — **26 tests** en `apps/api/src/**/*.spec.ts`, corren en CI (`.github/workflows/ci.yml`). Cubren: descomposición de IGV y costeo promedio (`money`), builders UBL (`apisunat.builder`), y la lógica de negocio crítica con Prisma mockeado: anulación de venta (repone stock, bloquea si hay comprobante aceptado), protección del OWNER al editar usuarios, override de precio por lista + `setPrices`, almacén principal no desactivable, y ciclo de anulación de documentos comerciales.
 
 ---
 
