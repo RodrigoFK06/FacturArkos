@@ -1,8 +1,8 @@
-import { Body, Controller, ForbiddenException, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, ForbiddenException, Get, Headers, Param, Patch, Post } from '@nestjs/common';
 import { OrgId } from '../common/decorators/current-user.decorator';
 import { Public, Roles } from '../common/decorators/roles.decorator';
 import { env } from '../common/config/env';
-import { CreateRecurringDto, SetStatusDto } from './dto';
+import { CreateRecurringDto, SetStatusDto, UpdateRecurringDto } from './dto';
 import { RecurringService } from './recurring.service';
 
 @Roles('OWNER', 'ADMIN', 'MANAGER')
@@ -34,6 +34,11 @@ export class RecurringController {
   @Post(':id/status')
   setStatus(@OrgId() organizationId: string, @Param('id') id: string, @Body() dto: SetStatusDto) {
     return this.svc.setStatus(organizationId, id, dto.status);
+  }
+
+  @Patch(':id')
+  update(@OrgId() organizationId: string, @Param('id') id: string, @Body() dto: UpdateRecurringDto) {
+    return this.svc.update(organizationId, id, dto);
   }
 
   @Post(':id/run')

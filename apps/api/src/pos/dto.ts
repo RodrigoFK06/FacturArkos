@@ -18,6 +18,10 @@ export class SetFulfillmentDto {
   @IsEnum(FulfillmentStatus) status!: FulfillmentStatus;
 }
 
+export class CancelSaleDto {
+  @IsOptional() @IsString() reason?: string;
+}
+
 export class SaleItemDto {
   @IsOptional() @IsString() productId?: string;
   @IsString() @MinLength(1) name!: string;

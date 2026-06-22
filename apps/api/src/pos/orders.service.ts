@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import {
   CashMovementType,
+  CashSessionStatus,
   FulfillmentStatus,
   IgvAffectation,
+  InvoiceStatus,
   OrderStatus,
   PaymentMethod,
   PaymentStatus,
@@ -315,5 +317,86 @@ export class OrdersService {
     });
     if (!order) throw new NotFoundException('Orden no encontrada');
     return order;
+  }
+
+  /**
+   * Anula una venta que NO tiene comprobante aceptado: repone el stock vendido
+   * (RETURN_IN al almacén principal) y revierte el ingreso a caja (si la sesión
+   * sigue abierta), todo en una transacción. Si la venta ya tiene comprobante
+   * emitido/aceptado, debe anularse vía comunicación de baja del comprobante.
+   */
+  async cancelSale(organizationId: string, id: string, reason?: string) {
+    const order = await this.prisma.order.findFirst({
+      where: { id, organizationId },
+      include: { items: true, payments: true, invoice: true },
+    });
+    if (!order) throw new NotFoundException('Venta no encontrada');
+    if (order.status === OrderStatus.CANCELLED) {
+      throw new BadRequestException('La venta ya está anulada');
+    }
+    if (order.invoice && order.invoice.status !== InvoiceStatus.REJECTED) {
+      throw new BadRequestException(
+        'Esta venta tiene un comprobante emitido. Anúlalo desde Comprobantes (comunicación de baja).',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      // Reponer stock al almacén principal (mismo criterio que el descuento de la venta).
+      const warehouse =
+        (await tx.warehouse.findFirst({ where: { organizationId, isMain: true } })) ??
+        (await tx.warehouse.findFirst({ where: { organizationId } }));
+      if (warehouse) {
+        for (const it of order.items) {
+          if (!it.productId) continue;
+          const product = await tx.product.findFirst({ where: { id: it.productId, organizationId } });
+          if (!product?.tracksStock) continue;
+          const qty = Number(it.quantity);
+          await tx.stock.upsert({
+            where: { productId_warehouseId: { productId: it.productId, warehouseId: warehouse.id } },
+            create: { productId: it.productId, warehouseId: warehouse.id, quantity: new Prisma.Decimal(qty) },
+            update: { quantity: { increment: qty } },
+          });
+          await tx.stockMovement.create({
+            data: {
+              organizationId,
+              productId: it.productId,
+              warehouseId: warehouse.id,
+              type: StockMovementType.RETURN_IN,
+              quantity: qty,
+              reference: `CANCEL:${order.id}`,
+            },
+          });
+        }
+      }
+
+      // Revertir el ingreso de caja en efectivo si la sesión sigue abierta.
+      if (order.cashSessionId) {
+        const cashPaid = round2(
+          order.payments
+            .filter((p) => p.method === PaymentMethod.CASH)
+            .reduce((a, p) => a + Number(p.amount), 0),
+        );
+        if (cashPaid > 0) {
+          const session = await tx.cashSession.findFirst({ where: { id: order.cashSessionId } });
+          if (session && session.status === CashSessionStatus.OPEN) {
+            await tx.cashMovement.create({
+              data: {
+                cashSessionId: order.cashSessionId,
+                type: CashMovementType.WITHDRAWAL,
+                amount: cashPaid,
+                concept: `Anulación venta ${order.id}`,
+              },
+            });
+          }
+        }
+      }
+
+      const note = reason ? `${order.note ? `${order.note} · ` : ''}Anulada: ${reason}` : order.note;
+      return tx.order.update({
+        where: { id: order.id },
+        data: { status: OrderStatus.CANCELLED, note },
+        include: { items: true, payments: true, invoice: true },
+      });
+    });
   }
 }

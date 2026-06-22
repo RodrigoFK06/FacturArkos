@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Repeat, Plus, Play, Pause, Trash2 } from 'lucide-react';
-import { apiGet, apiPost } from '@/lib/api';
+import { Repeat, Plus, Play, Pause, Trash2, Pencil } from 'lucide-react';
+import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { EmptyState, FadeIn, Field, SkeletonRows, Toast, money } from '@/components/ui';
 
 interface Customer { id: string; name: string; documentNumber: string; identityType: string }
@@ -10,9 +10,11 @@ interface Plan {
   id: string;
   name: string;
   documentType: string;
+  series?: string | null;
   frequency: string;
   status: string;
   nextRunAt: string;
+  customerId: string;
   customer: { name: string };
   items: { name: string; quantity: string; unitPrice: string }[];
 }
@@ -25,6 +27,7 @@ export default function RecurrentePage() {
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [show, setShow] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
@@ -43,7 +46,37 @@ export default function RecurrentePage() {
     setItems((arr) => arr.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
   }
 
-  async function create() {
+  function resetForm() {
+    setForm({ name: '', customerId: '', documentType: 'FACTURA', frequency: 'MONTHLY', series: '', startDate: '' });
+    setItems([{ name: '', quantity: 1, unitPrice: 0 }]);
+  }
+
+  function startCreate() {
+    setEditingId(null);
+    resetForm();
+    setShow(true);
+  }
+
+  function startEdit(plan: Plan) {
+    setEditingId(plan.id);
+    setForm({
+      name: plan.name,
+      customerId: plan.customerId,
+      documentType: plan.documentType,
+      frequency: plan.frequency,
+      series: plan.series ?? '',
+      startDate: plan.nextRunAt ? new Date(plan.nextRunAt).toISOString().slice(0, 10) : '',
+    });
+    setItems(
+      plan.items.length
+        ? plan.items.map((it) => ({ name: it.name, quantity: Number(it.quantity), unitPrice: Number(it.unitPrice) }))
+        : [{ name: '', quantity: 1, unitPrice: 0 }],
+    );
+    setShow(true);
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function submit() {
     if (!form.name || !form.customerId) {
       setMsg({ kind: 'err', text: 'Nombre y cliente son obligatorios.' });
       return;
@@ -53,14 +86,20 @@ export default function RecurrentePage() {
       setMsg({ kind: 'err', text: 'Agrega al menos un ítem.' });
       return;
     }
-    setBusy('create');
+    setBusy('submit');
     setMsg(null);
     try {
-      await apiPost('/recurring', { ...form, series: form.series || undefined, startDate: form.startDate || undefined, items: validItems });
-      setMsg({ kind: 'ok', text: 'Plan recurrente creado.' });
+      const body = { ...form, series: form.series || undefined, startDate: form.startDate || undefined, items: validItems };
+      if (editingId) {
+        await apiPatch(`/recurring/${editingId}`, body);
+        setMsg({ kind: 'ok', text: 'Plan actualizado.' });
+      } else {
+        await apiPost('/recurring', body);
+        setMsg({ kind: 'ok', text: 'Plan recurrente creado.' });
+      }
+      setEditingId(null);
       setShow(false);
-      setForm({ name: '', customerId: '', documentType: 'FACTURA', frequency: 'MONTHLY', series: '', startDate: '' });
-      setItems([{ name: '', quantity: 1, unitPrice: 0 }]);
+      resetForm();
       load();
     } catch (err) {
       setMsg({ kind: 'err', text: (err as Error).message });
@@ -96,7 +135,7 @@ export default function RecurrentePage() {
             <h1 className="page-title serif">Facturación recurrente</h1>
             <p className="muted" style={{ maxWidth: 620 }}>Emite mensualidades y suscripciones de forma automática. Ideal para alquileres, gimnasios y servicios.</p>
           </div>
-          <button className="btn-primary row" style={{ gap: 8 }} onClick={() => setShow((s) => !s)}>
+          <button className="btn-primary row" style={{ gap: 8 }} onClick={startCreate}>
             <Plus size={16} /> Nuevo plan
           </button>
         </div>
@@ -107,7 +146,7 @@ export default function RecurrentePage() {
       {show && (
         <FadeIn>
           <div className="panel liquid-glass col" style={{ gap: 14 }}>
-            <h2 className="serif" style={{ fontSize: 20, margin: 0 }}>Nuevo plan recurrente</h2>
+            <h2 className="serif" style={{ fontSize: 20, margin: 0 }}>{editingId ? 'Editar plan recurrente' : 'Nuevo plan recurrente'}</h2>
             <div className="grid-2">
               <Field label="Nombre del plan"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Mensualidad gimnasio" /></Field>
               <Field label="Cliente">
@@ -147,8 +186,8 @@ export default function RecurrentePage() {
               <button className="btn-glass" style={{ alignSelf: 'flex-start' }} onClick={() => setItems((a) => [...a, { name: '', quantity: 1, unitPrice: 0 }])}>+ Ítem</button>
             </div>
 
-            <button className="btn-primary" style={{ alignSelf: 'flex-start' }} disabled={busy === 'create'} onClick={create}>
-              {busy === 'create' ? 'Creando…' : 'Crear plan'}
+            <button className="btn-primary" style={{ alignSelf: 'flex-start' }} disabled={busy === 'submit'} onClick={submit}>
+              {busy === 'submit' ? (editingId ? 'Guardando…' : 'Creando…') : (editingId ? 'Guardar cambios' : 'Crear plan')}
             </button>
           </div>
         </FadeIn>
@@ -163,7 +202,7 @@ export default function RecurrentePage() {
               icon={<Repeat size={24} />}
               title="Aún no tienes planes recurrentes"
               description="Crea una mensualidad o suscripción y FacturArkos emitirá el comprobante solo, en la frecuencia que definas."
-              action={<button className="btn-primary" onClick={() => setShow(true)}>Nuevo plan</button>}
+              action={<button className="btn-primary" onClick={startCreate}>Nuevo plan</button>}
             />
           ) : (
             <table className="table">
@@ -184,6 +223,7 @@ export default function RecurrentePage() {
                       <td>
                         <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
                           <button className="badge ok" disabled={!!busy} onClick={() => act(p.id, 'run')}><Play size={12} style={{ verticalAlign: -2 }} /> Emitir</button>
+                          <button className="badge neutral" disabled={!!busy} onClick={() => startEdit(p)}><Pencil size={12} style={{ verticalAlign: -2 }} /> Editar</button>
                           {p.status === 'ACTIVE'
                             ? <button className="badge warn" disabled={!!busy} onClick={() => act(p.id, 'pause')}><Pause size={12} style={{ verticalAlign: -2 }} /> Pausar</button>
                             : <button className="badge neutral" disabled={!!busy} onClick={() => act(p.id, 'activate')}>Activar</button>}

@@ -3,7 +3,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { DocumentType, RecurFrequency, RecurStatus } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { OrdersService } from '../pos/orders.service';
-import { CreateRecurringDto } from './dto';
+import { CreateRecurringDto, UpdateRecurringDto } from './dto';
 
 function advance(from: Date, freq: RecurFrequency): Date {
   const d = new Date(from);
@@ -66,6 +66,48 @@ export class RecurringService {
     const plan = await this.prisma.recurringPlan.findFirst({ where: { id, organizationId } });
     if (!plan) throw new NotFoundException('Plan no encontrado');
     return this.prisma.recurringPlan.update({ where: { id }, data: { status } });
+  }
+
+  async update(organizationId: string, id: string, dto: UpdateRecurringDto) {
+    const plan = await this.prisma.recurringPlan.findFirst({ where: { id, organizationId } });
+    if (!plan) throw new NotFoundException('Plan no encontrado');
+    if (dto.customerId) {
+      const customer = await this.prisma.customer.findFirst({
+        where: { id: dto.customerId, organizationId },
+      });
+      if (!customer) throw new BadRequestException('Cliente no válido');
+    }
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.items) {
+        await tx.recurringPlanItem.deleteMany({ where: { planId: id } });
+      }
+      return tx.recurringPlan.update({
+        where: { id },
+        data: {
+          name: dto.name ?? undefined,
+          customerId: dto.customerId ?? undefined,
+          documentType: dto.documentType ?? undefined,
+          series: dto.series ?? undefined,
+          frequency: dto.frequency ?? undefined,
+          emitOnRun: dto.emitOnRun ?? undefined,
+          note: dto.note ?? undefined,
+          nextRunAt: dto.startDate ? new Date(dto.startDate) : undefined,
+          ...(dto.items
+            ? {
+                items: {
+                  create: dto.items.map((i) => ({
+                    productId: i.productId ?? null,
+                    name: i.name,
+                    quantity: i.quantity,
+                    unitPrice: i.unitPrice,
+                  })),
+                },
+              }
+            : {}),
+        },
+        include: { customer: true, items: true },
+      });
+    });
   }
 
   /** Ejecuta un plan ahora (manual o por cron): crea la venta y, si corresponde, emite. */

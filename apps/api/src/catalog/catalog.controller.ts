@@ -1,11 +1,14 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { OrgId } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CatalogService } from './catalog.service';
 import {
   CreateCategoryDto,
+  CreatePriceListDto,
   CreateProductDto,
+  SetPricesDto,
   UpdateCategoryDto,
+  UpdatePriceListDto,
   UpdateProductDto,
 } from './dto';
 
@@ -18,8 +21,9 @@ export class CatalogController {
     @OrgId() organizationId: string,
     @Query('q') q?: string,
     @Query('all') all?: string,
+    @Query('priceListId') priceListId?: string,
   ) {
-    return this.svc.listProducts(organizationId, q, all === '1');
+    return this.svc.listProducts(organizationId, q, all === '1', priceListId || undefined);
   }
 
   @Get('products/barcode/:barcode')
@@ -67,5 +71,42 @@ export class CatalogController {
     @Body() dto: UpdateCategoryDto,
   ) {
     return this.svc.updateCategory(organizationId, id, dto);
+  }
+
+  // ── Listas de precios ──
+  @Get('price-lists')
+  listPriceLists(@OrgId() organizationId: string) {
+    return this.svc.listPriceLists(organizationId);
+  }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER')
+  @Post('price-lists')
+  createPriceList(@OrgId() organizationId: string, @Body() dto: CreatePriceListDto) {
+    return this.svc.createPriceList(organizationId, dto);
+  }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER')
+  @Patch('price-lists/:id')
+  updatePriceList(
+    @OrgId() organizationId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdatePriceListDto,
+  ) {
+    return this.svc.updatePriceList(organizationId, id, dto);
+  }
+
+  @Get('price-lists/:id/prices')
+  listPrices(@OrgId() organizationId: string, @Param('id') id: string) {
+    return this.svc.listPrices(organizationId, id);
+  }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER')
+  @Put('price-lists/:id/prices')
+  setPrices(
+    @OrgId() organizationId: string,
+    @Param('id') id: string,
+    @Body() dto: SetPricesDto,
+  ) {
+    return this.svc.setPrices(organizationId, id, dto);
   }
 }

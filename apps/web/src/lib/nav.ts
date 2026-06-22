@@ -1,7 +1,7 @@
 import {
-  BarChart3, Boxes, CalendarCheck, FileSpreadsheet, FileText, HandCoins,
+  BarChart3, Boxes, CalendarCheck, ClipboardList, FileSpreadsheet, FileText, HandCoins,
   LayoutDashboard, Package, PackageCheck, Receipt, ReceiptText, Repeat, ScanLine, Settings, ShoppingBag,
-  ShoppingCart, Sparkles, Store, Truck, UserCog, Users, Wallet, type LucideIcon,
+  ShoppingCart, Sparkles, Store, Tags, Truck, UserCog, Users, Wallet, type LucideIcon,
 } from 'lucide-react';
 
 export type Role = 'OWNER' | 'ADMIN' | 'MANAGER' | 'CASHIER' | 'ACCOUNTANT';
@@ -38,6 +38,7 @@ export const NAV: NavGroup[] = [
     title: 'Ventas',
     items: [
       { href: '/pos', label: 'Punto de venta', icon: Store, roles: SALES, keywords: 'pos vender caja venta' },
+      { href: '/ventas', label: 'Ventas', icon: ClipboardList, roles: SALES, keywords: 'ventas ordenes pedidos anular cancelar historial' },
       { href: '/invoices', label: 'Comprobantes', icon: Receipt, roles: ALL, keywords: 'boleta factura nota credito debito sunat' },
       { href: '/cotizaciones', label: 'Cotizaciones', icon: FileText, roles: SALES, keywords: 'cotizacion nota de venta proforma' },
       { href: '/emision-masiva', label: 'Emisión masiva', icon: FileSpreadsheet, roles: FISCAL, keywords: 'excel lote masivo' },
@@ -49,6 +50,7 @@ export const NAV: NavGroup[] = [
     title: 'Catálogo e inventario',
     items: [
       { href: '/products', label: 'Productos', icon: Boxes, roles: MGMT, keywords: 'catalogo articulos precios' },
+      { href: '/listas-precios', label: 'Listas de precios', icon: Tags, roles: MGMT, keywords: 'precios mayorista menudeo lista tarifa' },
       { href: '/inventory', label: 'Inventario', icon: Package, roles: MGMT, keywords: 'stock almacen kardex' },
       { href: '/purchases', label: 'Compras', icon: ShoppingCart, roles: FISCAL, keywords: 'proveedores compra' },
       { href: '/guias', label: 'Guías de remisión', icon: Truck, roles: MGMT, keywords: 'gre guia remision traslado transporte despacho' },

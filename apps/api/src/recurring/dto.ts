@@ -40,3 +40,22 @@ export class CreateRecurringDto {
 export class SetStatusDto {
   @IsEnum(RecurStatus) status!: RecurStatus;
 }
+
+export class UpdateRecurringDto {
+  @IsOptional() @IsString() @MinLength(2) name?: string;
+  @IsOptional() @IsString() customerId?: string;
+  @IsOptional() @IsEnum(DocumentType) documentType?: DocumentType;
+  @IsOptional() @IsString() series?: string;
+  @IsOptional() @IsEnum(RecurFrequency) frequency?: RecurFrequency;
+  @IsOptional() @IsBoolean() emitOnRun?: boolean;
+  @IsOptional() @IsString() startDate?: string;
+  @IsOptional() @IsString() note?: string;
+
+  /** Si viene, REEMPLAZA todos los ítems del plan. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => RecurringItemDto)
+  items?: RecurringItemDto[];
+}

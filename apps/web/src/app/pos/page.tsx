@@ -24,6 +24,11 @@ interface Customer {
   identityType: string;
   documentNumber: string;
 }
+interface PriceList {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
 
 const money = (n: number) => `S/ ${n.toFixed(2)}`;
 
@@ -40,6 +45,8 @@ const DETRACTION_CODES = [
 export default function PosPage() {
   const router = useRouter();
   const [products, setProducts] = useState<Product[]>([]);
+  const [priceLists, setPriceLists] = useState<PriceList[]>([]);
+  const [priceListId, setPriceListId] = useState('');
   const [query, setQuery] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [establishmentId, setEstablishmentId] = useState('');
@@ -71,13 +78,28 @@ export default function PosPage() {
     await refreshPending();
   }, [refreshPending]);
 
+  const loadProducts = useCallback(async () => {
+    const url = priceListId ? `/products?priceListId=${priceListId}` : '/products';
+    try {
+      setProducts(await apiGet<Product[]>(url));
+    } catch {
+      /* offline o error: conservar productos en memoria */
+    }
+  }, [priceListId]);
+
   useEffect(() => {
     if (!getToken()) {
       router.replace('/login');
       return;
     }
     setOnline(navigator.onLine);
-    apiGet<Product[]>('/products').then(setProducts).catch(() => undefined);
+    apiGet<PriceList[]>('/price-lists')
+      .then((lists) => {
+        setPriceLists(lists);
+        const def = lists.find((l) => l.isDefault);
+        if (def) setPriceListId(def.id);
+      })
+      .catch(() => undefined);
     apiGet<{ id: string }[]>('/establishments')
       .then((e) => e[0] && setEstablishmentId(e[0].id))
       .catch(() => undefined);
@@ -95,6 +117,12 @@ export default function PosPage() {
       window.removeEventListener('offline', goOffline);
     };
   }, [router, refreshPending, sync]);
+
+  // Carga productos en el montaje y al cambiar de lista de precios.
+  useEffect(() => {
+    if (!getToken()) return;
+    loadProducts();
+  }, [loadProducts]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -224,6 +252,23 @@ export default function PosPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {priceLists.length > 0 && (
+            <label className="row muted" style={{ gap: 8, fontSize: 13 }}>
+              <span>Precio:</span>
+              <select
+                value={priceListId}
+                onChange={(e) => setPriceListId(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                <option value="">Precio: lista base</option>
+                {priceLists.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}{l.isDefault ? ' (predeterminada)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
             {filtered.map((p) => (
               <button key={p.id} className="card col" style={{ alignItems: 'flex-start', textAlign: 'left' }} onClick={() => addToCart(p)}>

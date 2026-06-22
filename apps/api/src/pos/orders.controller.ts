@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { CurrentUser, OrgId } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { BulkSaleDto, CreateSaleDto, SetFulfillmentDto } from './dto';
+import { BulkSaleDto, CancelSaleDto, CreateSaleDto, SetFulfillmentDto } from './dto';
 import { OrdersService } from './orders.service';
 
 @Controller('orders')
@@ -51,5 +51,15 @@ export class OrdersController {
     @Body() dto: BulkSaleDto,
   ) {
     return this.svc.bulkSale(organizationId, userId, dto);
+  }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER')
+  @Post(':id/cancel')
+  cancel(
+    @OrgId() organizationId: string,
+    @Param('id') id: string,
+    @Body() dto: CancelSaleDto,
+  ) {
+    return this.svc.cancelSale(organizationId, id, dto.reason);
   }
 }

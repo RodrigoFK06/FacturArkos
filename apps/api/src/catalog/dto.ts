@@ -1,5 +1,8 @@
 import { IgvAffectation } from '@prisma/client';
+import { Type } from 'class-transformer';
 import {
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsEnum,
   IsNumber,
@@ -7,6 +10,7 @@ import {
   IsString,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 
 export class CreateProductDto {
@@ -45,4 +49,30 @@ export class CreateCategoryDto {
 export class UpdateCategoryDto {
   @IsOptional() @IsString() @MinLength(1) name?: string;
   @IsOptional() @IsBoolean() active?: boolean;
+}
+
+// ── Listas de precios ──
+
+export class CreatePriceListDto {
+  @IsString() @MinLength(1) name!: string;
+  @IsOptional() @IsBoolean() isDefault?: boolean;
+}
+
+export class UpdatePriceListDto {
+  @IsOptional() @IsString() @MinLength(1) name?: string;
+  @IsOptional() @IsBoolean() isDefault?: boolean;
+}
+
+export class PriceRowDto {
+  @IsString() productId!: string;
+  /** Precio CON IGV en esta lista. 0 (o menos) elimina el precio especial. */
+  @IsNumber() @Min(0) price!: number;
+}
+
+export class SetPricesDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => PriceRowDto)
+  prices!: PriceRowDto[];
 }
