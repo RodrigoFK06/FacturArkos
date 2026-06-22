@@ -27,7 +27,13 @@ export function validateEnv(config: Record<string, unknown>): Record<string, unk
 export const env = {
   nodeEnv: () => process.env.NODE_ENV ?? 'development',
   port: () => parseInt(process.env.PORT ?? '3001', 10),
-  corsOrigins: () => (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(',').map((s) => s.trim()),
+  // Normaliza: separa por coma, quita espacios y la barra final (el header Origin
+  // del navegador nunca lleva "/", así que CORS_ORIGINS con o sin barra debe servir).
+  corsOrigins: () =>
+    (process.env.CORS_ORIGINS ?? 'http://localhost:3000')
+      .split(',')
+      .map((s) => s.trim().replace(/\/+$/, ''))
+      .filter(Boolean),
   jwtSecret: () => process.env.JWT_SECRET as string,
   jwtExpiresIn: () => process.env.JWT_EXPIRES_IN ?? '12h',
   /** Secreto para los cron HTTP (Vercel Cron manda Authorization: Bearer <CRON_SECRET>). */
