@@ -127,4 +127,17 @@ export class CommercialService {
     await this.prisma.commercialDoc.update({ where: { id }, data: { status: CommercialStatus.CONVERTIDA } });
     return result;
   }
+
+  /** Anula un documento abierto (no convertido). No revierte stock (no descontó). */
+  async cancel(organizationId: string, id: string) {
+    const doc = await this.prisma.commercialDoc.findFirst({ where: { id, organizationId } });
+    if (!doc) throw new NotFoundException('Documento no encontrado');
+    if (doc.status !== CommercialStatus.ABIERTA) {
+      throw new BadRequestException('Solo se puede anular un documento abierto');
+    }
+    return this.prisma.commercialDoc.update({
+      where: { id },
+      data: { status: CommercialStatus.ANULADA },
+    });
+  }
 }

@@ -1,6 +1,6 @@
 'use client';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { ArrowRightLeft, Plus, Trash2, FileText } from 'lucide-react';
+import { ArrowRightLeft, Ban, Plus, Trash2, FileText } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/api';
 import { EmptyState, FadeIn, Field, SkeletonRows, Toast, money } from '@/components/ui';
 
@@ -64,6 +64,15 @@ export default function CotizacionesPage() {
       await apiPost(`/commercial/${id}/convert`, {});
       load(kind);
       setMsg({ kind: 'ok', text: 'Convertido a venta. La orden quedó registrada.' });
+    } catch (e) { setMsg({ kind: 'err', text: (e as Error).message }); }
+  }
+
+  async function cancelDoc(id: string) {
+    if (!confirm('¿Anular este documento? No se podrá convertir después.')) return;
+    try {
+      await apiPost(`/commercial/${id}/cancel`, {});
+      load(kind);
+      setMsg({ kind: 'ok', text: `${label} anulada.` });
     } catch (e) { setMsg({ kind: 'err', text: (e as Error).message }); }
   }
 
@@ -136,7 +145,10 @@ export default function CotizacionesPage() {
                     <td><span className={`badge ${STATUS_CLASS[d.status] ?? 'neutral'}`}>{STATUS_LABEL[d.status] ?? d.status}</span></td>
                     <td>
                       {d.status === 'ABIERTA' && (
-                        <button className="badge neutral row" style={{ gap: 5 }} onClick={() => convert(d.id)}><ArrowRightLeft size={13} /> Convertir a venta</button>
+                        <div className="row" style={{ gap: 6 }}>
+                          <button className="badge neutral row" style={{ gap: 5 }} onClick={() => convert(d.id)}><ArrowRightLeft size={13} /> Convertir a venta</button>
+                          <button className="badge err row" style={{ gap: 5 }} onClick={() => cancelDoc(d.id)}><Ban size={13} /> Anular</button>
+                        </div>
                       )}
                     </td>
                   </tr>

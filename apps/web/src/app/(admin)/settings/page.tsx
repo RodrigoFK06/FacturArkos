@@ -1,7 +1,7 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
-import { apiGet, apiPatch, apiPut } from '@/lib/api';
-import { FadeIn, Field, Toast } from '@/components/ui';
+import { apiGet, apiPatch, apiPost, apiPut } from '@/lib/api';
+import { FadeIn, Field, SkeletonRows, Toast } from '@/components/ui';
 
 interface SunatCfg {
   configured: boolean;
@@ -29,6 +29,14 @@ interface Org {
   perceptionRegime?: string | null;
   detractionAccount?: string | null;
 }
+interface Establishment {
+  id: string;
+  code: string;
+  name: string;
+  address?: string | null;
+  isMain: boolean;
+  active: boolean;
+}
 
 export default function SettingsPage() {
   const [cfg, setCfg] = useState<SunatCfg | null>(null);
@@ -40,6 +48,16 @@ export default function SettingsPage() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
   const [orgMsg, setOrgMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
+  // Establecimientos / sucursales
+  const [establishments, setEstablishments] = useState<Establishment[] | null>(null);
+  const [estForm, setEstForm] = useState({ code: '', name: '', address: '' });
+  const [estEditingId, setEstEditingId] = useState<string | null>(null);
+  const [estOpen, setEstOpen] = useState(false);
+  const [estMsg, setEstMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+
+  const reloadEst = () =>
+    apiGet<Establishment[]>('/establishments?all=1').then(setEstablishments).catch(() => setEstablishments([]));
+
   useEffect(() => {
     apiGet<SunatCfg>('/sunat-config').then((c) => {
       setCfg(c);
@@ -47,7 +65,55 @@ export default function SettingsPage() {
       if (c.testMode !== undefined) setTestMode(c.testMode);
     }).catch(() => undefined);
     apiGet<Org>('/organization').then(setOrg).catch(() => undefined);
+    reloadEst();
   }, []);
+
+  function startEstCreate() {
+    setEstEditingId(null);
+    setEstForm({ code: '', name: '', address: '' });
+    setEstMsg(null);
+    setEstOpen(true);
+  }
+  function startEstEdit(e: Establishment) {
+    setEstEditingId(e.id);
+    setEstForm({ code: e.code, name: e.name, address: e.address ?? '' });
+    setEstMsg(null);
+    setEstOpen(true);
+  }
+  async function submitEst(ev: FormEvent) {
+    ev.preventDefault();
+    setEstMsg(null);
+    try {
+      if (estEditingId) {
+        await apiPatch(`/establishments/${estEditingId}`, {
+          name: estForm.name,
+          address: estForm.address || undefined,
+        });
+      } else {
+        await apiPost('/establishments', {
+          code: estForm.code,
+          name: estForm.name,
+          address: estForm.address || undefined,
+        });
+      }
+      setEstOpen(false);
+      setEstEditingId(null);
+      setEstForm({ code: '', name: '', address: '' });
+      await reloadEst();
+      setEstMsg({ kind: 'ok', text: 'Sucursal guardada.' });
+    } catch (err) {
+      setEstMsg({ kind: 'err', text: (err as Error).message });
+    }
+  }
+  async function toggleEst(e: Establishment) {
+    setEstMsg(null);
+    try {
+      await apiPatch(`/establishments/${e.id}`, { active: !e.active });
+      await reloadEst();
+    } catch (err) {
+      setEstMsg({ kind: 'err', text: (err as Error).message });
+    }
+  }
 
   async function saveSunat(e: FormEvent) {
     e.preventDefault();
@@ -196,6 +262,71 @@ export default function SettingsPage() {
           <Toast msg={orgMsg} />
           <button className="btn-primary" type="submit" style={{ alignSelf: 'flex-start' }}>Guardar datos</button>
         </form>
+      </FadeIn>
+
+      <FadeIn delay={0.12}>
+        <div className="panel liquid-glass col" style={{ gap: 14 }}>
+          <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+            <h2 className="serif" style={{ fontSize: 24, margin: 0 }}>Establecimientos (sucursales)</h2>
+            <button type="button" className="btn-glass" onClick={() => (estOpen ? setEstOpen(false) : startEstCreate())}>
+              {estOpen ? 'Cerrar' : 'Nueva sucursal'}
+            </button>
+          </div>
+          <p className="muted" style={{ marginTop: -6 }}>
+            Tus locales o anexos SUNAT. El código de 4 dígitos identifica el anexo en tus comprobantes.
+          </p>
+
+          {estOpen && (
+            <form className="col" style={{ gap: 12, borderBottom: '1px solid var(--border)', paddingBottom: 14 }} onSubmit={submitEst}>
+              <div className="grid-2">
+                <Field label="Código (4 dígitos)">
+                  <input value={estForm.code} disabled={!!estEditingId} maxLength={4} onChange={(e) => setEstForm({ ...estForm, code: e.target.value })} placeholder="0001" />
+                </Field>
+                <Field label="Nombre">
+                  <input value={estForm.name} onChange={(e) => setEstForm({ ...estForm, name: e.target.value })} placeholder="Sucursal Centro" />
+                </Field>
+              </div>
+              <Field label="Dirección">
+                <input value={estForm.address} onChange={(e) => setEstForm({ ...estForm, address: e.target.value })} />
+              </Field>
+              <Toast msg={estMsg} />
+              <button className="btn-primary" type="submit" style={{ alignSelf: 'flex-start' }}>
+                {estEditingId ? 'Guardar cambios' : 'Crear sucursal'}
+              </button>
+            </form>
+          )}
+          {!estOpen && estMsg && <Toast msg={estMsg} />}
+
+          {establishments === null ? (
+            <SkeletonRows rows={2} cols={4} />
+          ) : establishments.length === 0 ? (
+            <p className="muted">Aún no tienes sucursales.</p>
+          ) : (
+            <table className="table">
+              <thead><tr><th>Código</th><th>Nombre</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody>
+                {establishments.map((e) => (
+                  <tr key={e.id}>
+                    <td>
+                      <span className="muted">{e.code}</span>
+                      {e.isMain && <span className="badge neutral" style={{ marginLeft: 6 }}>Principal</span>}
+                    </td>
+                    <td>{e.name}{e.address ? <span className="muted"> · {e.address}</span> : null}</td>
+                    <td>{e.active ? <span className="badge ok">Activo</span> : <span className="badge neutral">Oculto</span>}</td>
+                    <td>
+                      <div className="row" style={{ gap: 6 }}>
+                        <button className="badge neutral" onClick={() => startEstEdit(e)}>Editar</button>
+                        {!e.isMain && (
+                          <button className="badge neutral" onClick={() => toggleEst(e)}>{e.active ? 'Ocultar' : 'Activar'}</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </FadeIn>
         </div>
 

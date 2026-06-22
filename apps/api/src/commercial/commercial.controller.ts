@@ -35,4 +35,10 @@ export class CommercialController {
   ) {
     return this.svc.convert(organizationId, userId, id, dto);
   }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER')
+  @Post(':id/cancel')
+  cancel(@OrgId() organizationId: string, @Param('id') id: string) {
+    return this.svc.cancel(organizationId, id);
+  }
 }
