@@ -1,7 +1,19 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { CreateEstablishmentDto, CreateUserDto, UpdateOrganizationDto } from './dto';
+import {
+  CreateEstablishmentDto,
+  CreateUserDto,
+  UpdateEstablishmentDto,
+  UpdateOrganizationDto,
+  UpdateUserDto,
+} from './dto';
 
 @Injectable()
 export class TenancyService {
@@ -19,9 +31,9 @@ export class TenancyService {
   }
 
   // ── Establecimientos ──
-  listEstablishments(organizationId: string) {
+  listEstablishments(organizationId: string, includeInactive = false) {
     return this.prisma.establishment.findMany({
-      where: { organizationId },
+      where: { organizationId, ...(includeInactive ? {} : { active: true }) },
       orderBy: { code: 'asc' },
     });
   }
@@ -34,6 +46,15 @@ export class TenancyService {
     return this.prisma.establishment.create({
       data: { organizationId, code: dto.code, name: dto.name, address: dto.address },
     });
+  }
+
+  async updateEstablishment(organizationId: string, id: string, dto: UpdateEstablishmentDto) {
+    const est = await this.prisma.establishment.findFirst({ where: { id, organizationId } });
+    if (!est) throw new NotFoundException('Establecimiento no encontrado');
+    if (est.isMain && dto.active === false) {
+      throw new BadRequestException('No puedes desactivar el establecimiento principal');
+    }
+    return this.prisma.establishment.update({ where: { id }, data: dto });
   }
 
   // ── Usuarios ──
@@ -55,5 +76,34 @@ export class TenancyService {
       data: { organizationId, email: dto.email, name: dto.name, passwordHash, role: dto.role },
     });
     return { id: user.id, email: user.email, name: user.name, role: user.role };
+  }
+
+  async updateUser(organizationId: string, id: string, dto: UpdateUserDto) {
+    const user = await this.prisma.user.findFirst({ where: { id, organizationId } });
+    if (!user) throw new NotFoundException('Usuario no encontrado');
+    // El OWNER es la cuenta dueña del registro: no se desactiva ni se le cambia el rol.
+    if (user.role === UserRole.OWNER && (dto.active === false || (dto.role && dto.role !== UserRole.OWNER))) {
+      throw new BadRequestException('No puedes desactivar ni cambiar el rol del propietario');
+    }
+    // El rol OWNER no se asigna desde aquí (evita dos propietarios).
+    if (dto.role === UserRole.OWNER && user.role !== UserRole.OWNER) {
+      throw new BadRequestException('No puedes asignar el rol de propietario');
+    }
+    const data: {
+      name?: string;
+      role?: UserRole;
+      active?: boolean;
+      passwordHash?: string;
+    } = {};
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.role !== undefined) data.role = dto.role;
+    if (dto.active !== undefined) data.active = dto.active;
+    if (dto.password) data.passwordHash = await bcrypt.hash(dto.password, 10);
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data,
+      select: { id: true, email: true, name: true, role: true, active: true },
+    });
+    return updated;
   }
 }

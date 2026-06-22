@@ -1,7 +1,7 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
-import { Plus, Search, Users } from 'lucide-react';
-import { apiGet, apiPost } from '@/lib/api';
+import { Pencil, Plus, Search, Users } from 'lucide-react';
+import { apiGet, apiPatch, apiPost } from '@/lib/api';
 import { EmptyState, FadeIn, Field, SkeletonRows, Toast } from '@/components/ui';
 
 interface Customer {
@@ -11,6 +11,8 @@ interface Customer {
   name: string;
   email?: string | null;
   phone?: string | null;
+  address?: string | null;
+  active: boolean;
 }
 
 const DOC_LABEL: Record<string, string> = { DNI: 'DNI', RUC: 'RUC', CE: 'C.E.', PASSPORT: 'Pasaporte', NONE: '—' };
@@ -20,14 +22,37 @@ export default function ClientesPage() {
   const [list, setList] = useState<Customer[] | null>(null);
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
   const [form, setForm] = useState({ ...empty });
   const [msg, setMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   function load(query = '') {
-    apiGet<Customer[]>(`/customers${query ? `?q=${encodeURIComponent(query)}` : ''}`).then(setList).catch(() => setList([]));
+    apiGet<Customer[]>(`/customers?all=1${query ? `&q=${encodeURIComponent(query)}` : ''}`).then(setList).catch(() => setList([]));
   }
   useEffect(() => { load(); }, []);
+
+  function startCreate() {
+    setEditingId(null);
+    setForm({ ...empty });
+    setMsg(null);
+    setOpen(true);
+  }
+
+  function startEdit(c: Customer) {
+    setEditingId(c.id);
+    setForm({
+      identityType: c.identityType,
+      documentNumber: c.documentNumber,
+      name: c.name,
+      email: c.email ?? '',
+      phone: c.phone ?? '',
+      address: c.address ?? '',
+    });
+    setMsg(null);
+    setOpen(true);
+  }
 
   async function lookup() {
     if (!form.documentNumber) return;
@@ -51,24 +76,50 @@ export default function ClientesPage() {
     setBusy(true);
     setMsg(null);
     try {
-      await apiPost('/customers', {
-        identityType: form.identityType,
-        documentNumber: form.documentNumber,
-        name: form.name,
-        email: form.email || undefined,
-        phone: form.phone || undefined,
-        address: form.address || undefined,
-      });
+      if (editingId) {
+        await apiPatch(`/customers/${editingId}`, {
+          name: form.name,
+          address: form.address || undefined,
+          email: form.email || undefined,
+          phone: form.phone || undefined,
+        });
+      } else {
+        await apiPost('/customers', {
+          identityType: form.identityType,
+          documentNumber: form.documentNumber,
+          name: form.name,
+          email: form.email || undefined,
+          phone: form.phone || undefined,
+          address: form.address || undefined,
+        });
+      }
       setForm({ ...empty });
+      setEditingId(null);
       setOpen(false);
       load(q);
-      setMsg({ kind: 'ok', text: 'Cliente guardado.' });
+      setMsg({ kind: 'ok', text: editingId ? 'Cambios guardados.' : 'Cliente guardado.' });
     } catch (e2) {
       setMsg({ kind: 'err', text: (e2 as Error).message });
     } finally {
       setBusy(false);
     }
   }
+
+  async function toggleActive(c: Customer) {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await apiPatch(`/customers/${c.id}`, { active: !c.active });
+      load(q);
+      setMsg({ kind: 'ok', text: c.active ? 'Cliente ocultado.' : 'Cliente activado.' });
+    } catch (e) {
+      setMsg({ kind: 'err', text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const rows = (list ?? []).filter((c) => showHidden || c.active !== false);
 
   return (
     <div className="col" style={{ gap: 24 }}>
@@ -78,7 +129,7 @@ export default function ClientesPage() {
             <div className="page-label">Clientes</div>
             <h1 className="page-title serif">Clientes</h1>
           </div>
-          <button className="btn-primary row" style={{ gap: 6 }} onClick={() => setOpen((o) => !o)}><Plus size={16} /> Nuevo cliente</button>
+          <button className="btn-primary row" style={{ gap: 6 }} onClick={startCreate}><Plus size={16} /> Nuevo cliente</button>
         </div>
       </FadeIn>
 
@@ -87,7 +138,7 @@ export default function ClientesPage() {
           <form className="panel col" style={{ gap: 14, maxWidth: 720 }} onSubmit={submit}>
             <div className="grid-3">
               <Field label="Tipo de documento">
-                <select value={form.identityType} onChange={(e) => setForm({ ...form, identityType: e.target.value })}>
+                <select value={form.identityType} disabled={!!editingId} onChange={(e) => setForm({ ...form, identityType: e.target.value })}>
                   <option value="DNI">DNI</option>
                   <option value="RUC">RUC</option>
                   <option value="CE">Carné de extranjería</option>
@@ -95,11 +146,13 @@ export default function ClientesPage() {
                 </select>
               </Field>
               <Field label="Número">
-                <input value={form.documentNumber} onChange={(e) => setForm({ ...form, documentNumber: e.target.value })} />
+                <input value={form.documentNumber} disabled={!!editingId} onChange={(e) => setForm({ ...form, documentNumber: e.target.value })} />
               </Field>
-              <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-                <button type="button" className="btn-glass row" style={{ gap: 6 }} onClick={lookup} disabled={busy}><Search size={15} /> Autocompletar</button>
-              </div>
+              {!editingId && (
+                <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+                  <button type="button" className="btn-glass row" style={{ gap: 6 }} onClick={lookup} disabled={busy}><Search size={15} /> Autocompletar</button>
+                </div>
+              )}
             </div>
             <Field label="Nombre / Razón social *"><input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
             <div className="grid-3">
@@ -108,19 +161,22 @@ export default function ClientesPage() {
               <Field label="Dirección"><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} /></Field>
             </div>
             <Toast msg={msg} />
-            <button className="btn-primary" type="submit" disabled={busy} style={{ alignSelf: 'flex-start' }}>{busy ? 'Guardando…' : 'Guardar cliente'}</button>
+            <button className="btn-primary" type="submit" disabled={busy} style={{ alignSelf: 'flex-start' }}>{busy ? 'Guardando…' : editingId ? 'Guardar cambios' : 'Guardar cliente'}</button>
           </form>
         </FadeIn>
       )}
 
       <FadeIn delay={0.1}>
         <div className="panel">
-          <div className="row" style={{ marginBottom: 14 }}>
+          <div className="row" style={{ marginBottom: 14, gap: 16 }}>
             <input placeholder="Buscar por nombre o documento…" value={q} onChange={(e) => { setQ(e.target.value); load(e.target.value); }} style={{ maxWidth: 360 }} />
+            <label className="row muted" style={{ gap: 6, cursor: 'pointer' }}>
+              <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Mostrar ocultos
+            </label>
           </div>
           {list === null ? (
-            <SkeletonRows rows={5} cols={3} />
-          ) : list.length === 0 ? (
+            <SkeletonRows rows={5} cols={4} />
+          ) : rows.length === 0 ? (
             <EmptyState
               icon={<Users size={24} />}
               title={q ? 'Sin resultados' : 'Aún no tienes clientes'}
@@ -128,13 +184,20 @@ export default function ClientesPage() {
             />
           ) : (
             <table className="table">
-              <thead><tr><th>Documento</th><th>Nombre / Razón social</th><th>Contacto</th></tr></thead>
+              <thead><tr><th>Documento</th><th>Nombre / Razón social</th><th>Contacto</th><th>Estado</th><th></th></tr></thead>
               <tbody>
-                {list.map((c) => (
+                {rows.map((c) => (
                   <tr key={c.id}>
                     <td><span className="badge neutral">{DOC_LABEL[c.identityType] ?? c.identityType}</span> {c.documentNumber}</td>
                     <td>{c.name}</td>
                     <td className="muted">{[c.phone, c.email].filter(Boolean).join(' · ') || '—'}</td>
+                    <td><span className={`badge ${c.active ? 'ok' : 'warn'}`}>{c.active ? 'Activo' : 'Oculto'}</span></td>
+                    <td>
+                      <div className="row" style={{ gap: 8, justifyContent: 'flex-end' }}>
+                        <button type="button" className="btn-glass row" style={{ gap: 6 }} onClick={() => startEdit(c)}><Pencil size={14} /> Editar</button>
+                        <button type="button" className="btn-glass" onClick={() => toggleActive(c)} disabled={busy}>{c.active ? 'Ocultar' : 'Activar'}</button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

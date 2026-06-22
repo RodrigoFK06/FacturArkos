@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { DocIdentityType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { PeruApiService } from '../peru-api/peru-api.service';
-import { CreateCustomerDto } from './dto';
+import { CreateCustomerDto, UpdateCustomerDto } from './dto';
 
 @Injectable()
 export class CustomersService {
@@ -11,10 +11,11 @@ export class CustomersService {
     private readonly peru: PeruApiService,
   ) {}
 
-  list(organizationId: string, q?: string) {
+  list(organizationId: string, q?: string, includeInactive = false) {
     return this.prisma.customer.findMany({
       where: {
         organizationId,
+        ...(includeInactive ? {} : { active: true }),
         ...(q
           ? { OR: [{ name: { contains: q, mode: 'insensitive' } }, { documentNumber: { contains: q } }] }
           : {}),
@@ -28,6 +29,11 @@ export class CustomersService {
     const c = await this.prisma.customer.findFirst({ where: { id, organizationId } });
     if (!c) throw new NotFoundException('Cliente no encontrado');
     return c;
+  }
+
+  async update(organizationId: string, id: string, dto: UpdateCustomerDto) {
+    await this.get(organizationId, id);
+    return this.prisma.customer.update({ where: { id }, data: dto });
   }
 
   /** Crea o actualiza por (tenant, tipoDoc, número). */

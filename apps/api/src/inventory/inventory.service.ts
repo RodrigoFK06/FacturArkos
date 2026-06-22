@@ -2,7 +2,13 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma, StockMovementType } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { round2, round4, weightedAverageCost } from '../common/utils/money';
-import { CreateLotDto, CreateWarehouseDto, MovementDto, TransferDto } from './dto';
+import {
+  CreateLotDto,
+  CreateWarehouseDto,
+  MovementDto,
+  TransferDto,
+  UpdateWarehouseDto,
+} from './dto';
 
 const round3 = (n: number) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 
@@ -21,14 +27,26 @@ export class InventoryService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ── Almacenes ──
-  listWarehouses(organizationId: string) {
-    return this.prisma.warehouse.findMany({ where: { organizationId }, orderBy: { name: 'asc' } });
+  listWarehouses(organizationId: string, includeInactive = false) {
+    return this.prisma.warehouse.findMany({
+      where: { organizationId, ...(includeInactive ? {} : { active: true }) },
+      orderBy: { name: 'asc' },
+    });
   }
 
   createWarehouse(organizationId: string, dto: CreateWarehouseDto) {
     return this.prisma.warehouse.create({
       data: { organizationId, name: dto.name, isMain: dto.isMain ?? false },
     });
+  }
+
+  async updateWarehouse(organizationId: string, id: string, dto: UpdateWarehouseDto) {
+    const wh = await this.prisma.warehouse.findFirst({ where: { id, organizationId } });
+    if (!wh) throw new NotFoundException('Almacén no encontrado');
+    if (wh.isMain && dto.active === false) {
+      throw new BadRequestException('No puedes desactivar el almacén principal');
+    }
+    return this.prisma.warehouse.update({ where: { id }, data: dto });
   }
 
   // ── Stock ──

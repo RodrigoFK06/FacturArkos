@@ -1,18 +1,25 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { CreateCategoryDto, CreateProductDto, UpdateProductDto } from './dto';
+import {
+  CreateCategoryDto,
+  CreateProductDto,
+  UpdateCategoryDto,
+  UpdateProductDto,
+} from './dto';
 
 @Injectable()
 export class CatalogService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ── Productos ──
-  listProducts(organizationId: string, q?: string) {
+  // includeInactive: la gestión del catálogo (panel admin) ve también los ocultos
+  // para poder reactivarlos; el POS/tienda usa el default (solo activos).
+  listProducts(organizationId: string, q?: string, includeInactive = false) {
     return this.prisma.product.findMany({
       where: {
         organizationId,
-        active: true,
+        ...(includeInactive ? {} : { active: true }),
         ...(q
           ? {
               OR: [
@@ -61,13 +68,29 @@ export class CatalogService {
   }
 
   // ── Categorías ──
-  listCategories(organizationId: string) {
-    return this.prisma.category.findMany({ where: { organizationId }, orderBy: { name: 'asc' } });
+  listCategories(organizationId: string, includeInactive = false) {
+    return this.prisma.category.findMany({
+      where: { organizationId, ...(includeInactive ? {} : { active: true }) },
+      orderBy: { name: 'asc' },
+    });
   }
 
   async createCategory(organizationId: string, dto: CreateCategoryDto) {
     try {
       return await this.prisma.category.create({ data: { organizationId, name: dto.name } });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException('Ya existe una categoría con ese nombre');
+      }
+      throw e;
+    }
+  }
+
+  async updateCategory(organizationId: string, id: string, dto: UpdateCategoryDto) {
+    const cat = await this.prisma.category.findFirst({ where: { id, organizationId } });
+    if (!cat) throw new NotFoundException('Categoría no encontrada');
+    try {
+      return await this.prisma.category.update({ where: { id }, data: dto });
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         throw new ConflictException('Ya existe una categoría con ese nombre');

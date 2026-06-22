@@ -1,7 +1,7 @@
 'use client';
 import { FormEvent, useEffect, useState } from 'react';
-import { Plus, Trash2, ShoppingCart } from 'lucide-react';
-import { apiGet, apiPost } from '@/lib/api';
+import { Plus, Trash2, ShoppingCart, Users, Pencil, EyeOff, Eye } from 'lucide-react';
+import { apiGet, apiPost, apiPatch } from '@/lib/api';
 import { EmptyState, FadeIn, Field, SkeletonRows, Toast, money } from '@/components/ui';
 
 interface Purchase {
@@ -13,7 +13,7 @@ interface Purchase {
   supplier: { businessName: string; ruc: string };
   items: { id: string }[];
 }
-interface Supplier { id: string; businessName: string; ruc: string }
+interface Supplier { id: string; businessName: string; ruc: string; address?: string | null; phone?: string | null; email?: string | null; active: boolean }
 interface Warehouse { id: string; name: string }
 interface Product { id: string; name: string; cost: string | number }
 interface Line { productId: string; quantity: string; unitCost: string }
@@ -27,29 +27,72 @@ export default function PurchasesPage() {
   const [supplierId, setSupplierId] = useState('');
   const [warehouseId, setWarehouseId] = useState('');
   const [lines, setLines] = useState<Line[]>([{ productId: '', quantity: '1', unitCost: '' }]);
-  const [newSup, setNewSup] = useState({ ruc: '', businessName: '' });
+  const [supForm, setSupForm] = useState({ ruc: '', businessName: '', address: '', phone: '', email: '' });
+  const [editingSupplierId, setEditingSupplierId] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [supOpen, setSupOpen] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
+
+  function loadSuppliers() {
+    apiGet<Supplier[]>('/suppliers?all=1').then((s) => { setSuppliers(s); const active = s.filter((x) => x.active !== false); if (active[0] && !supplierId) setSupplierId(active[0].id); }).catch(() => undefined);
+  }
 
   function load() {
     apiGet<Purchase[]>('/purchases').then(setPurchases).catch(() => setPurchases([]));
-    apiGet<Supplier[]>('/suppliers').then((s) => { setSuppliers(s); if (s[0] && !supplierId) setSupplierId(s[0].id); }).catch(() => undefined);
+    loadSuppliers();
     apiGet<Warehouse[]>('/inventory/warehouses').then((w) => { setWarehouses(w); if (w[0] && !warehouseId) setWarehouseId(w[0].id); }).catch(() => undefined);
     apiGet<Product[]>('/products').then(setProducts).catch(() => undefined);
   }
   useEffect(load, []);
 
-  async function createSupplier() {
-    if (!/^(10|15|17|20)\d{9}$/.test(newSup.ruc) || newSup.businessName.length < 2) {
+  function resetSupForm() {
+    setSupForm({ ruc: '', businessName: '', address: '', phone: '', email: '' });
+    setEditingSupplierId(null);
+  }
+
+  function startEditSupplier(s: Supplier) {
+    setEditingSupplierId(s.id);
+    setSupForm({ ruc: s.ruc, businessName: s.businessName, address: s.address ?? '', phone: s.phone ?? '', email: s.email ?? '' });
+    setSupOpen(true);
+  }
+
+  async function submitSupplier() {
+    if (editingSupplierId) {
+      if (supForm.businessName.length < 2) {
+        setMsg({ kind: 'err', text: 'Razón social requerida.' });
+        return;
+      }
+      try {
+        const s = await apiPatch<Supplier>(`/suppliers/${editingSupplierId}`, { businessName: supForm.businessName, address: supForm.address, phone: supForm.phone, email: supForm.email });
+        resetSupForm();
+        loadSuppliers();
+        setMsg({ kind: 'ok', text: `Proveedor ${s.businessName} actualizado.` });
+      } catch (err) {
+        setMsg({ kind: 'err', text: (err as Error).message });
+      }
+      return;
+    }
+    if (!/^(10|15|17|20)\d{9}$/.test(supForm.ruc) || supForm.businessName.length < 2) {
       setMsg({ kind: 'err', text: 'RUC (11 díg.) y razón social requeridos.' });
       return;
     }
     try {
-      const s = await apiPost<Supplier>('/suppliers', newSup);
-      setNewSup({ ruc: '', businessName: '' });
+      const s = await apiPost<Supplier>('/suppliers', { ruc: supForm.ruc, businessName: supForm.businessName, address: supForm.address, phone: supForm.phone, email: supForm.email });
+      resetSupForm();
       setSuppliers((prev) => [s, ...prev.filter((x) => x.id !== s.id)]);
       setSupplierId(s.id);
       setMsg({ kind: 'ok', text: `Proveedor ${s.businessName} guardado.` });
+    } catch (err) {
+      setMsg({ kind: 'err', text: (err as Error).message });
+    }
+  }
+
+  async function toggleSupplierActive(s: Supplier) {
+    try {
+      await apiPatch(`/suppliers/${s.id}`, { active: !s.active });
+      loadSuppliers();
+      setMsg({ kind: 'ok', text: `Proveedor ${s.active ? 'oculto' : 'activado'}.` });
     } catch (err) {
       setMsg({ kind: 'err', text: (err as Error).message });
     }
@@ -98,11 +141,81 @@ export default function PurchasesPage() {
             <div className="page-label">Abastecimiento</div>
             <h1 className="page-title serif">Compras</h1>
           </div>
-          <button className="btn-primary row" style={{ gap: 6 }} onClick={() => setOpen((o) => !o)}>
-            <Plus size={16} /> Registrar compra
-          </button>
+          <div className="row" style={{ gap: 8 }}>
+            <button className="btn-glass liquid-glass row" style={{ gap: 6 }} onClick={() => setSupOpen((o) => !o)}>
+              <Users size={16} /> Proveedores
+            </button>
+            <button className="btn-primary row" style={{ gap: 6 }} onClick={() => setOpen((o) => !o)}>
+              <Plus size={16} /> Registrar compra
+            </button>
+          </div>
         </div>
       </FadeIn>
+
+      {supOpen && (
+        <FadeIn>
+          <div className="panel liquid-glass col" style={{ gap: 14 }}>
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <span className="serif" style={{ fontSize: 18 }}>Proveedores</span>
+              <label className="row muted" style={{ gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Mostrar ocultos
+              </label>
+            </div>
+
+            <div className="grid-3">
+              <Field label="RUC">
+                <input value={supForm.ruc} disabled={!!editingSupplierId} onChange={(e) => setSupForm({ ...supForm, ruc: e.target.value })} placeholder="20XXXXXXXXX" />
+              </Field>
+              <Field label="Razón social"><input value={supForm.businessName} onChange={(e) => setSupForm({ ...supForm, businessName: e.target.value })} /></Field>
+              <Field label="Dirección"><input value={supForm.address} onChange={(e) => setSupForm({ ...supForm, address: e.target.value })} /></Field>
+              <Field label="Teléfono"><input value={supForm.phone} onChange={(e) => setSupForm({ ...supForm, phone: e.target.value })} /></Field>
+              <Field label="Email"><input value={supForm.email} onChange={(e) => setSupForm({ ...supForm, email: e.target.value })} /></Field>
+            </div>
+            <div className="row" style={{ gap: 8 }}>
+              <button type="button" className="btn-primary" onClick={submitSupplier}>
+                {editingSupplierId ? 'Guardar cambios' : 'Agregar proveedor'}
+              </button>
+              {editingSupplierId && (
+                <button type="button" className="btn-glass liquid-glass" onClick={resetSupForm}>Cancelar</button>
+              )}
+            </div>
+
+            {suppliers.filter((s) => showHidden || s.active !== false).length === 0 ? (
+              <EmptyState icon={<Users size={24} />} title="Sin proveedores" description="Agrega tu primer proveedor para registrar compras." />
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Proveedor</th>
+                    <th>Contacto</th>
+                    <th>Estado</th>
+                    <th className="num">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {suppliers.filter((s) => showHidden || s.active !== false).map((s) => (
+                    <tr key={s.id}>
+                      <td>{s.businessName}<div className="muted" style={{ fontSize: 12 }}>{s.ruc}</div></td>
+                      <td className="muted" style={{ fontSize: 12 }}>{s.phone || s.email || s.address || '—'}</td>
+                      <td><span className={`badge ${s.active === false ? 'neutral' : 'ok'}`}>{s.active === false ? 'Oculto' : 'Activo'}</span></td>
+                      <td className="num">
+                        <div className="row" style={{ gap: 6, justifyContent: 'flex-end' }}>
+                          <button type="button" className="btn-glass row" style={{ gap: 4 }} onClick={() => startEditSupplier(s)}><Pencil size={14} /> Editar</button>
+                          <button type="button" className="btn-glass row" style={{ gap: 4 }} onClick={() => toggleSupplierActive(s)}>
+                            {s.active === false ? <><Eye size={14} /> Activar</> : <><EyeOff size={14} /> Ocultar</>}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+
+            <Toast msg={msg} />
+          </div>
+        </FadeIn>
+      )}
 
       {open && (
         <FadeIn>
@@ -111,7 +224,7 @@ export default function PurchasesPage() {
               <Field label="Proveedor">
                 <select value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
                   <option value="">—</option>
-                  {suppliers.map((s) => <option key={s.id} value={s.id}>{s.businessName} ({s.ruc})</option>)}
+                  {suppliers.filter((s) => s.active !== false).map((s) => <option key={s.id} value={s.id}>{s.businessName} ({s.ruc})</option>)}
                 </select>
               </Field>
               <Field label="Almacén (recepción)">
@@ -119,12 +232,6 @@ export default function PurchasesPage() {
                   {warehouses.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
               </Field>
-            </div>
-
-            <div className="row" style={{ gap: 8, alignItems: 'flex-end' }}>
-              <Field label="Nuevo proveedor — RUC"><input value={newSup.ruc} onChange={(e) => setNewSup({ ...newSup, ruc: e.target.value })} placeholder="20XXXXXXXXX" /></Field>
-              <Field label="Razón social"><input value={newSup.businessName} onChange={(e) => setNewSup({ ...newSup, businessName: e.target.value })} /></Field>
-              <button type="button" className="btn-glass liquid-glass" onClick={createSupplier}>Agregar</button>
             </div>
 
             <div className="col" style={{ gap: 8 }}>

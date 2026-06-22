@@ -247,6 +247,7 @@ model Establishment {
   name           String
   address        String?
   isMain         Boolean  @default(false)
+  active         Boolean  @default(true)
   createdAt      DateTime @default(now())
 
   organization  Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -320,6 +321,7 @@ model Category {
   id             String   @id @default(cuid())
   organizationId String
   name           String
+  active         Boolean  @default(true)
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -409,6 +411,7 @@ model Warehouse {
   organizationId String
   name           String
   isMain         Boolean @default(false)
+  active         Boolean @default(true)
 
   organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   stocks       Stock[]
@@ -463,6 +466,7 @@ model Customer {
   address        String?
   email          String?
   phone          String?
+  active         Boolean         @default(true)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
@@ -483,6 +487,7 @@ model Supplier {
   address        String?
   phone          String?
   email          String?
+  active         Boolean  @default(true)
   createdAt      DateTime @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)

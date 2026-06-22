@@ -4,11 +4,13 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   ArrowRight,
-  Check,
+  CheckCircle2,
+  Circle,
   ExternalLink,
   HelpCircle,
   Receipt,
   RefreshCw,
+  Rocket,
   Sparkles,
   ShieldCheck,
   ShoppingBag,
@@ -19,7 +21,7 @@ import {
 } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/api';
 import { getUser } from '@/lib/auth';
-import { AnimatedNumber, FadeIn, StatCard, StatusBadge, money } from '@/components/ui';
+import { AnimatedNumber, FadeIn, SkeletonRows, StatCard, StatusBadge, money } from '@/components/ui';
 import { Tour, TourStep } from '@/components/Tour';
 
 interface Dashboard {
@@ -30,6 +32,9 @@ interface Dashboard {
   topProductos: { name: string; quantity: number; total: number }[];
 }
 interface Invoice { id: string; documentType: string; series: string; number: number; status: string; total: string; }
+interface OrgInfo { direccion?: string | null; ubigeo?: string | null }
+interface SunatStatus { configured?: boolean }
+interface OnboardingState { org: boolean; sunat: boolean; products: boolean; customers: boolean; orders: boolean; team: boolean }
 interface Health { aceptados: number; pendientes: number; rechazados: number; saludable: boolean; ultimaRevision: string | null; problemas: { id: string; series: string; number: number; status: string }[]; }
 
 const DOC_LABEL: Record<string, string> = { FACTURA: 'Factura', BOLETA: 'Boleta', NOTA_CREDITO: 'N. Crédito', NOTA_DEBITO: 'N. Débito' };
@@ -43,19 +48,46 @@ const TOUR_STEPS: TourStep[] = [
 
 export default function DashboardPage() {
   const [d, setD] = useState<Dashboard | null>(null);
-  const [sunatOk, setSunatOk] = useState(false);
-  const [prodCount, setProdCount] = useState(0);
   const [recent, setRecent] = useState<Invoice[]>([]);
   const [runTour, setRunTour] = useState(0);
   const [health, setHealth] = useState<Health | null>(null);
   const [checking, setChecking] = useState(false);
+  const [onboarding, setOnboarding] = useState<OnboardingState | null>(null);
 
   useEffect(() => {
     apiGet<Dashboard>('/reports/dashboard').then(setD).catch(() => undefined);
-    apiGet<{ configured: boolean }>('/sunat-config').then((c) => setSunatOk(!!c.configured)).catch(() => undefined);
-    apiGet<unknown[]>('/products').then((p) => setProdCount(Array.isArray(p) ? p.length : 0)).catch(() => undefined);
     apiGet<Invoice[]>('/invoices').then((r) => setRecent(r.slice(0, 6))).catch(() => undefined);
     apiGet<Health>('/monitor/health').then(setHealth).catch(() => undefined);
+  }, []);
+
+  // Puesta en marcha: deriva cada paso de datos reales. Toda llamada que falle
+  // (incluido 403 para roles sin permiso en /users o /sunat-config) cuenta como
+  // "no completado" y nunca rompe el dashboard.
+  useEffect(() => {
+    const ok = <T,>(p: PromiseSettledResult<T>): T | null => (p.status === 'fulfilled' ? p.value : null);
+    Promise.allSettled([
+      apiGet<OrgInfo>('/organization'),
+      apiGet<SunatStatus>('/sunat-config'),
+      apiGet<unknown[]>('/products'),
+      apiGet<unknown[]>('/customers'),
+      apiGet<unknown[]>('/orders'),
+      apiGet<unknown[]>('/users'),
+    ]).then(([org, sunat, products, customers, orders, users]) => {
+      const orgV = ok(org);
+      const sunatV = ok(sunat);
+      const productsV = ok(products);
+      const customersV = ok(customers);
+      const ordersV = ok(orders);
+      const usersV = ok(users);
+      setOnboarding({
+        org: !!(orgV?.direccion && orgV?.direccion.trim() && orgV?.ubigeo && orgV?.ubigeo.trim()),
+        sunat: !!sunatV?.configured,
+        products: Array.isArray(productsV) && productsV.length > 0,
+        customers: Array.isArray(customersV) && customersV.length > 0,
+        orders: Array.isArray(ordersV) && ordersV.length > 0,
+        team: Array.isArray(usersV) && usersV.length > 1,
+      });
+    });
   }, []);
 
   async function reconcile() {
@@ -79,13 +111,16 @@ export default function DashboardPage() {
   const today = todayRaw.charAt(0).toUpperCase() + todayRaw.slice(1);
   const storeUrl = user?.organizationId ? `/tienda/${user.organizationId}` : '#';
 
-  const steps = [
-    { label: 'Conecta tu cuenta SUNAT', desc: 'Carga tus credenciales para emitir', done: sunatOk, href: '/settings' },
-    { label: 'Crea tu primer producto', desc: 'Arma tu catálogo de venta', done: prodCount > 0, href: '/products' },
-    { label: 'Registra tu primera venta', desc: 'Usa el punto de venta', done: (d?.ventasMes.count ?? 0) > 0, href: '/pos' },
-    { label: 'Emite un comprobante', desc: 'Boleta o factura aceptada por SUNAT', done: (d?.comprobantes?.ACCEPTED ?? 0) > 0, href: '/invoices' },
+  const onbSteps = [
+    { label: 'Configura los datos de tu negocio', desc: 'Dirección y ubigeo para tus comprobantes', done: !!onboarding?.org, href: '/settings' },
+    { label: 'Conecta SUNAT para facturar', desc: 'Carga tus credenciales para emitir', done: !!onboarding?.sunat, href: '/settings' },
+    { label: 'Crea tu primer producto', desc: 'Arma tu catálogo de venta', done: !!onboarding?.products, href: '/products' },
+    { label: 'Registra tu primer cliente', desc: 'Tu cartera de clientes', done: !!onboarding?.customers, href: '/clientes' },
+    { label: 'Realiza tu primera venta', desc: 'Usa el punto de venta', done: !!onboarding?.orders, href: '/pos' },
+    { label: 'Invita a tu equipo', desc: 'Suma a tu personal con sus permisos', done: !!onboarding?.team, href: '/usuarios' },
   ];
-  const pending = steps.filter((s) => !s.done).length;
+  const onbDone = onbSteps.filter((s) => s.done).length;
+  const onbAllDone = onbDone === onbSteps.length;
 
   const quickActions = [
     { label: 'Nueva venta', href: '/pos', icon: ShoppingCart },
@@ -116,6 +151,58 @@ export default function DashboardPage() {
         </div>
       </FadeIn>
 
+      {/* Puesta en marcha: guía de onboarding derivada de datos reales. */}
+      {onboarding === null ? (
+        <FadeIn delay={0.04}>
+          <div className="panel">
+            <SkeletonRows rows={3} cols={2} />
+          </div>
+        </FadeIn>
+      ) : onbAllDone ? (
+        <FadeIn delay={0.04}>
+          <div className="panel liquid-glass row" style={{ gap: 14, alignItems: 'center' }}>
+            <span className="ico" style={{ color: 'var(--ok)' }}><Rocket size={22} /></span>
+            <div>
+              <h2 className="serif" style={{ fontSize: 18, margin: 0 }}>¡Tu negocio está listo! 🎉</h2>
+              <p className="muted" style={{ fontSize: 13, margin: '4px 0 0' }}>Completaste todos los pasos de la puesta en marcha.</p>
+            </div>
+          </div>
+        </FadeIn>
+      ) : (
+        <FadeIn delay={0.04}>
+          <div className="panel liquid-glass">
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+              <div className="row" style={{ gap: 10, alignItems: 'center' }}>
+                <span className="ico"><Rocket size={20} /></span>
+                <div>
+                  <h2 className="serif" style={{ fontSize: 19, margin: 0 }}>Pon en marcha tu negocio</h2>
+                  <p className="muted" style={{ fontSize: 13, margin: '3px 0 0' }}>Completa estos pasos para empezar a facturar y vender.</p>
+                </div>
+              </div>
+              <span className="badge neutral">{onbDone} de {onbSteps.length} completados</span>
+            </div>
+            <div className="col" style={{ gap: 2 }}>
+              {onbSteps.map((s, i) => (
+                <div key={i} className="row" style={{ gap: 12, alignItems: 'center', padding: '10px 0', opacity: s.done ? 0.7 : 1 }}>
+                  <span style={{ color: s.done ? 'var(--ok)' : 'var(--muted)', display: 'flex' }}>
+                    {s.done ? <CheckCircle2 size={20} /> : <Circle size={20} />}
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, textDecoration: s.done ? 'line-through' : 'none' }}>{s.label}</div>
+                    <div className="muted" style={{ fontSize: 13 }}>{s.desc}</div>
+                  </span>
+                  {!s.done && (
+                    <Link href={s.href} className="btn-glass row" style={{ gap: 6, textDecoration: 'none', fontSize: 13, padding: '6px 12px' }}>
+                      Hacer <ArrowRight size={15} />
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </FadeIn>
+      )}
+
       <FadeIn delay={0.05}>
         <div className="kpi-grid" data-tour="kpis">
           <StatCard label="Ventas hoy" value={<AnimatedNumber value={d?.ventasHoy.total ?? 0} format={money} />} sub={`${d?.ventasHoy.count ?? 0} ventas`} icon={<TrendingUp size={18} />} />
@@ -127,29 +214,6 @@ export default function DashboardPage() {
 
       <div className="dash-grid">
         <div className="col" style={{ gap: 16 }}>
-          {pending > 0 && (
-            <FadeIn delay={0.1}>
-              <div className="panel">
-                <div className="row" style={{ justifyContent: 'space-between', marginBottom: 16 }}>
-                  <h2 className="serif" style={{ fontSize: 19, margin: 0 }}>Primeros pasos</h2>
-                  <span className="muted" style={{ fontSize: 13 }}>{steps.length - pending}/{steps.length} completado</span>
-                </div>
-                <div className="steps">
-                  {steps.map((s, i) => (
-                    <Link key={i} href={s.href} className={`step ${s.done ? 'done' : ''}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-                      <span className="step-num">{s.done ? <Check size={15} /> : i + 1}</span>
-                      <span style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{s.label}</div>
-                        <div className="muted" style={{ fontSize: 13 }}>{s.desc}</div>
-                      </span>
-                      {!s.done && <ArrowRight size={16} className="muted" />}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </FadeIn>
-          )}
-
           <FadeIn delay={0.15}>
             <div className="panel">
               <h2 className="serif" style={{ fontSize: 19, margin: '0 0 14px' }}>Productos más vendidos del mes</h2>

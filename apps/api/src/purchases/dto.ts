@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsNumber,
   IsOptional,
   IsString,
@@ -19,6 +20,15 @@ export class CreateSupplierDto {
   @IsOptional() @IsString() address?: string;
   @IsOptional() @IsString() phone?: string;
   @IsOptional() @IsString() email?: string;
+}
+
+/** Edita datos del proveedor / estado. El RUC es la llave: no se cambia. */
+export class UpdateSupplierDto {
+  @IsOptional() @IsString() @MinLength(2) businessName?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsString() phone?: string;
+  @IsOptional() @IsString() email?: string;
+  @IsOptional() @IsBoolean() active?: boolean;
 }
 
 export class PurchaseItemDto {

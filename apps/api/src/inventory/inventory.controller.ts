@@ -1,7 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { OrgId } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
-import { CreateLotDto, CreateWarehouseDto, MovementDto, TransferDto } from './dto';
+import {
+  CreateLotDto,
+  CreateWarehouseDto,
+  MovementDto,
+  TransferDto,
+  UpdateWarehouseDto,
+} from './dto';
 import { InventoryService } from './inventory.service';
 
 @Controller('inventory')
@@ -9,14 +15,24 @@ export class InventoryController {
   constructor(private readonly svc: InventoryService) {}
 
   @Get('warehouses')
-  listWarehouses(@OrgId() organizationId: string) {
-    return this.svc.listWarehouses(organizationId);
+  listWarehouses(@OrgId() organizationId: string, @Query('all') all?: string) {
+    return this.svc.listWarehouses(organizationId, all === '1');
   }
 
   @Roles('OWNER', 'ADMIN', 'MANAGER')
   @Post('warehouses')
   createWarehouse(@OrgId() organizationId: string, @Body() dto: CreateWarehouseDto) {
     return this.svc.createWarehouse(organizationId, dto);
+  }
+
+  @Roles('OWNER', 'ADMIN', 'MANAGER')
+  @Patch('warehouses/:id')
+  updateWarehouse(
+    @OrgId() organizationId: string,
+    @Param('id') id: string,
+    @Body() dto: UpdateWarehouseDto,
+  ) {
+    return this.svc.updateWarehouse(organizationId, id, dto);
   }
 
   @Get('stock')

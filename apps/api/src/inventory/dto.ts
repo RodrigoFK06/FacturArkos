@@ -14,6 +14,12 @@ export class CreateWarehouseDto {
   @IsOptional() @IsBoolean() isMain?: boolean;
 }
 
+export class UpdateWarehouseDto {
+  @IsOptional() @IsString() @MinLength(1) name?: string;
+  @IsOptional() @IsBoolean() isMain?: boolean;
+  @IsOptional() @IsBoolean() active?: boolean;
+}
+
 /** Movimiento manual de inventario (ingresos/ajustes; ventas y compras usan su flujo). */
 export class MovementDto {
   @IsString() productId!: string;

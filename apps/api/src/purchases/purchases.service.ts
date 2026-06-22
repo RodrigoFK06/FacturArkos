@@ -4,7 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { limaDateString } from '../common/utils/lima-time';
 import { IGV_RATE, round2 } from '../common/utils/money';
 import { InventoryService } from '../inventory/inventory.service';
-import { CreatePurchaseDto, CreateSupplierDto } from './dto';
+import { CreatePurchaseDto, CreateSupplierDto, UpdateSupplierDto } from './dto';
 
 @Injectable()
 export class PurchasesService {
@@ -14,10 +14,11 @@ export class PurchasesService {
   ) {}
 
   // ── Proveedores ──
-  listSuppliers(organizationId: string, q?: string) {
+  listSuppliers(organizationId: string, q?: string, includeInactive = false) {
     return this.prisma.supplier.findMany({
       where: {
         organizationId,
+        ...(includeInactive ? {} : { active: true }),
         ...(q
           ? { OR: [{ businessName: { contains: q, mode: 'insensitive' } }, { ruc: { contains: q } }] }
           : {}),
@@ -37,6 +38,12 @@ export class PurchasesService {
         email: dto.email,
       },
     });
+  }
+
+  async updateSupplier(organizationId: string, id: string, dto: UpdateSupplierDto) {
+    const supplier = await this.prisma.supplier.findFirst({ where: { id, organizationId } });
+    if (!supplier) throw new NotFoundException('Proveedor no encontrado');
+    return this.prisma.supplier.update({ where: { id }, data: dto });
   }
 
   // ── Compras ──

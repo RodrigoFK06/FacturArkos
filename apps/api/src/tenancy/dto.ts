@@ -34,3 +34,17 @@ export class CreateUserDto {
   @IsString() @MinLength(8) password!: string;
   @IsEnum(UserRole) role!: UserRole;
 }
+
+/** Edita un miembro del equipo: nombre, rol, estado o contraseña (correo es la llave). */
+export class UpdateUserDto {
+  @IsOptional() @IsString() @MinLength(2) name?: string;
+  @IsOptional() @IsEnum(UserRole) role?: UserRole;
+  @IsOptional() @IsBoolean() active?: boolean;
+  @IsOptional() @IsString() @MinLength(8) password?: string;
+}
+
+export class UpdateEstablishmentDto {
+  @IsOptional() @IsString() @MinLength(2) name?: string;
+  @IsOptional() @IsString() address?: string;
+  @IsOptional() @IsBoolean() active?: boolean;
+}

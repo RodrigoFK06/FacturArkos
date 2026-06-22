@@ -20,6 +20,7 @@ export class CreateProductDto {
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsString() sunatProductCode?: string;
   @IsOptional() @IsBoolean() tracksStock?: boolean;
+  @IsOptional() @IsNumber() @Min(0) minStock?: number;
 }
 
 export class UpdateProductDto {
@@ -33,9 +34,15 @@ export class UpdateProductDto {
   @IsOptional() @IsString() categoryId?: string;
   @IsOptional() @IsString() sunatProductCode?: string;
   @IsOptional() @IsBoolean() tracksStock?: boolean;
+  @IsOptional() @IsNumber() @Min(0) minStock?: number;
   @IsOptional() @IsBoolean() active?: boolean;
 }
 
 export class CreateCategoryDto {
   @IsString() @MinLength(1) name!: string;
+}
+
+export class UpdateCategoryDto {
+  @IsOptional() @IsString() @MinLength(1) name?: string;
+  @IsOptional() @IsBoolean() active?: boolean;
 }
