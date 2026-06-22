@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "pnpm prisma generate && pnpm prisma db push && pnpm build",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "crons": [
+    { "path": "/api/recurring/cron", "schedule": "0 11 * * *" },
+    { "path": "/api/monitor/cron", "schedule": "0 13 * * *" }
+  ]
+}

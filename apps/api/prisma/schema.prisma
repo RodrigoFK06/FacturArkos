@@ -3,7 +3,9 @@
 // Montos en Decimal; fechas fiscales en string yyyy-mm-dd (timezone Lima).
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" para local; "rhel-openssl-3.0.x" para el runtime serverless de Vercel.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {

@@ -30,6 +30,8 @@ export const env = {
   corsOrigins: () => (process.env.CORS_ORIGINS ?? 'http://localhost:3000').split(',').map((s) => s.trim()),
   jwtSecret: () => process.env.JWT_SECRET as string,
   jwtExpiresIn: () => process.env.JWT_EXPIRES_IN ?? '12h',
+  /** Secreto para los cron HTTP (Vercel Cron manda Authorization: Bearer <CRON_SECRET>). */
+  cronSecret: () => process.env.CRON_SECRET ?? '',
   apisunat: () => ({
     baseUrl: process.env.APISUNAT_BASE_URL ?? 'https://back.apisunat.com',
     personaId: process.env.APISUNAT_PERSONA_ID ?? '',
