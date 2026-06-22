@@ -39,3 +39,8 @@ coverage/
 
 # scripts background output
 *.output
+
+# Playwright
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/.playwright/
