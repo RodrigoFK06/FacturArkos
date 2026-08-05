@@ -14,10 +14,28 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/** AEO Kit — schema WebSite + creator (Árkos). */
+const websiteSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'FacturArkos',
+  description: 'Facturación electrónica SUNAT + POS para Perú',
+  inLanguage: 'es',
+  creator: {
+    '@type': 'Organization',
+    name: 'Árkos',
+    url: 'https://xn--rkos-4na.com',
+  },
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }}
+        />
         <ServiceWorkerRegister />
         {children}
       </body>

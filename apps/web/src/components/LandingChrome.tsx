@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Globe } from 'lucide-react';
 import { getToken } from '@/lib/auth';
+import { ArkosCredit } from '@/components/ArkosCredit';
 
 export function LandingNav() {
   const [authed, setAuthed] = useState(false);
@@ -38,6 +39,7 @@ export function LandingFooter() {
       <div className="lp-foot">
         <span>© {2026} FacturArkos · Facturación electrónica SUNAT + POS para Perú</span>
         <span>Hecho en Perú 🇵🇪</span>
+        <ArkosCredit />
       </div>
     </footer>
   );
