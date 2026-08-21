@@ -44,3 +44,7 @@ coverage/
 apps/web/test-results/
 apps/web/playwright-report/
 apps/web/.playwright/
+
+# --- Grafo de conocimiento (graphify) ---
+# Derivado del codigo: se regenera con `graphify . --code-only`.
+graphify-out/
