@@ -11,7 +11,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import { LandingNav, LandingFooter } from '@/components/LandingChrome';
-import { PricingCards } from '@/components/Pricing';
+import { PLANS, PricingCards } from '@/components/Pricing';
+import { SITE_URL } from '@/lib/seo.mjs';
 
 export const metadata = {
   title: 'FacturArkos — Facturación electrónica SUNAT + POS para Perú',
@@ -37,9 +38,41 @@ const STEPS = [
   { n: 3, title: 'Vende y crece', desc: 'Factura, vende en el POS, abre tu tienda y controla todo desde un panel.' },
 ];
 
+/**
+ * AEO Kit — el producto como SoftwareApplication, colgado de la entidad Árkos
+ * que publica el apex (mismo @id). Los precios salen de PLANS, no se copian.
+ */
+const ARKOS = { '@id': 'https://xn--rkos-4na.com/#organization' };
+
+const productSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'FacturArkos',
+  url: SITE_URL,
+  description: metadata.description,
+  applicationCategory: 'BusinessApplication',
+  operatingSystem: 'Web',
+  inLanguage: 'es-PE',
+  featureList: FEATURES.map((f) => f.title),
+  offers: PLANS.map((p) => ({
+    '@type': 'Offer',
+    name: p.name,
+    description: p.desc,
+    price: p.price.replace(/[^\d.]/g, ''),
+    priceCurrency: 'PEN',
+    url: `${SITE_URL}/precios`,
+  })),
+  publisher: ARKOS,
+  provider: ARKOS,
+};
+
 export default function LandingPage() {
   return (
     <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(productSchema) }}
+      />
       <LandingNav />
 
       <header className="lp lp-hero">
