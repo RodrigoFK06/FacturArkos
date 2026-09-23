@@ -10,7 +10,7 @@ export function ArkosCredit({ className = "" }: { className?: string }) {
       href="https://xn--rkos-4na.com"
       target="_blank"
       rel="noopener"
-      title="Árkos — Agencia de desarrollo de software y diseño UX/UI en Trujillo, Perú"
+      title="Árkos — Mejora de procesos y adopción de IA para empresas en Lima, Perú"
       className={`inline-flex items-center gap-1.5 transition-opacity hover:opacity-70 ${className}`}
     >
       <span>Diseñado y desarrollado por</span>
