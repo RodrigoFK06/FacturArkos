@@ -254,8 +254,16 @@ input::placeholder { color: var(--faint); }
 @media (max-width: 760px) { .lp-nav-links a:not(.lp-cta) { display: none; } }
 .lp-cta { background: var(--accent); color: #fff !important; padding: 7px 16px; border-radius: 980px; font-weight: 600; }
 .lp-cta:hover { background: var(--accent-hover); }
+/* Menú móvil: bajo 760 px los enlaces se esconden y pasan a un panel bajo la barra. */
+.lp-menu-btn, .lp-menu { display: none; }
+@media (max-width: 760px) {
+  .lp-nav-links { gap: 8px; }
+  .lp-menu-btn { display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0; background: transparent; color: var(--text); }
+  .lp-menu { display: flex; flex-direction: column; padding-bottom: 8px; }
+  .lp-menu a { display: flex; align-items: center; min-height: 48px; border-top: 1px solid var(--border); color: var(--text); font-size: 16px; font-weight: 500; }
+}
 
-.lp-hero { text-align: center; padding: 88px 0 64px; }
+.lp-hero { text-align: center; padding-block: 88px 64px; } /* solo vertical: el margen lateral lo da .lp (antes 0 en móvil) */
 .lp-eyebrow { display: inline-block; background: rgba(0,113,227,0.1); color: var(--accent); font-size: 13px; font-weight: 600; padding: 6px 14px; border-radius: 980px; margin-bottom: 22px; }
 .lp-h1 { font-size: clamp(38px, 6vw, 68px); font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; margin: 0 auto; max-width: 14ch; }
 .lp-sub { font-size: clamp(17px, 2.2vw, 21px); color: var(--muted); max-width: 60ch; margin: 22px auto 0; line-height: 1.5; }
@@ -263,7 +271,7 @@ input::placeholder { color: var(--faint); }
 .lp-btn-lg { padding: 13px 28px; border-radius: 980px; font-size: 16px; font-weight: 600; }
 .lp-trust { margin-top: 26px; color: var(--faint); font-size: 14px; }
 
-.lp-section { padding: 64px 0; }
+.lp-section { padding-block: 64px; }
 .lp-section-head { text-align: center; max-width: 56ch; margin: 0 auto 44px; }
 .lp-section-head h2 { font-size: clamp(28px, 4vw, 42px); font-weight: 600; letter-spacing: -0.025em; margin: 0; }
 .lp-section-head p { color: var(--muted); font-size: 18px; margin: 14px 0 0; line-height: 1.5; }
@@ -294,6 +302,10 @@ input::placeholder { color: var(--faint); }
 .lp-final .lp-btn-lg { background: #fff; color: var(--text) !important; }
 
 .lp-foot { border-top: 1px solid var(--border); padding: 36px 0; color: var(--faint); font-size: 14px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+/* Crédito Árkos: el isotipo a la altura del texto (sin tamaño, el SVG se iba a 140 px). */
+.arkos-credit { display: inline-flex; align-items: center; gap: 6px; transition: opacity 0.12s ease; }
+.arkos-credit:hover { opacity: 0.7; }
+.arkos-credit-logo { height: 1.2em; width: auto; flex-shrink: 0; }
 
 /* Mini-barra para comparar montos en tablas de reporte. */
 .bar { display: block; height: 5px; max-width: 220px; border-radius: 980px; background: var(--accent); opacity: 0.55; }

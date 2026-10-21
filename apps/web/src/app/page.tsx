@@ -76,7 +76,7 @@ export default function LandingPage() {
       <LandingNav />
 
       <header className="lp lp-hero">
-        <span className="lp-eyebrow">Facturación electrónica + POS para el Perú 🇵🇪</span>
+        <span className="lp-eyebrow">Facturación electrónica + POS para el Perú</span>
         <h1 className="lp-h1">Tu negocio facturando con SUNAT en minutos</h1>
         <p className="lp-sub">
           Emite boletas y facturas electrónicas aceptadas por SUNAT, vende con tu punto de venta,
